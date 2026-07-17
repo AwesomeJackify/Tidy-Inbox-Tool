@@ -1,0 +1,23 @@
+{
+  "name": "tidy-inbox-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal CRM inbox exporter: fetch all chats, AI-summarize, build a spreadsheet, bulk-close.",
+  "scripts": {
+    "fetch": "node fetch.mjs",
+    "summarize": "node summarize.mjs",
+    "report": "node report.mjs",
+    "close": "node close-chats.mjs",
+    "all": "node fetch.mjs && node summarize.mjs && node report.mjs",
+    "sync": "node sync.mjs && node summarize.mjs && node report.mjs",
+    "serve": "node serve.mjs",
+    "review": "node review-bugs.mjs --cli",
+    "kb": "node build-kb.mjs",
+    "ticket": "node ticket.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.0",
+    "exceljs": "^4.4.0"
+  }
+}

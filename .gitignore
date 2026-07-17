@@ -1,0 +1,9 @@
+node_modules/
+
+# generated data + outputs (all rebuildable from the CRM)
+data/
+*.xlsx
+*.html
+
+# keep the task docs (they're source, not output)
+!REVIEW-BUGS-TASK.md
