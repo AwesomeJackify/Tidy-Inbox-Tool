@@ -1,9 +1,15 @@
 node_modules/
 
-# generated data + outputs (all rebuildable from the CRM)
-data/
+# generated CRM data + outputs (rebuildable from the CRM)
+data/*
+!data/proposals.json
+!data/ticket-types.json
+!data/ticket-actions.json
 *.xlsx
 *.html
+outputs/
+__pycache__/
+*.pyc
 
 # keep the task docs (they're source, not output)
 !REVIEW-BUGS-TASK.md

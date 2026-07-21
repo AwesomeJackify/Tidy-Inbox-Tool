@@ -12,6 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const ENRICHED = path.join(here, "data", "enriched.json");
 const RAW = path.join(here, "data", "inbox.json");
 const OUT = path.join(here, "inbox-report.xlsx");
+const TYPES = path.join(here, "data", "ticket-types.json");
 
 // Chat status/metadata always comes from inbox.json (sync.mjs keeps it current);
 // enriched.json only contributes the AI columns, joined by chat id.
@@ -21,6 +22,7 @@ if (!src) {
     process.exit(1);
 }
 const data = JSON.parse(fs.readFileSync(src, "utf8"));
+const manualTypes = fs.existsSync(TYPES) ? JSON.parse(fs.readFileSync(TYPES, "utf8")).types ?? {} : {};
 if (src === RAW && fs.existsSync(ENRICHED)) {
     const enriched = JSON.parse(fs.readFileSync(ENRICHED, "utf8"));
     const aiById = new Map(enriched.chats.filter((c) => c.ai).map((c) => [c.id, c.ai]));
@@ -69,6 +71,7 @@ const chats = [...data.chats].sort((a, b) => new Date(b.mostRecentMessageDate ??
 
 for (const chat of chats) {
     const ai = chat.ai ?? {};
+    const ticketType = manualTypes[chat.id] ?? ai.classification ?? "";
     const ann = annotations.get(chat.id);
     // A "close" decision that has been applied (chat is now closed) is spent — drop it.
     const myAction = ann?.action === "close" && chat.closedDate ? "" : (ann?.action ?? "");
@@ -77,7 +80,7 @@ for (const chat of chats) {
         last: chat.mostRecentMessageDate ? new Date(chat.mostRecentMessageDate) : null,
         from: chat.partiesDescription || chat.messages?.find((m) => !m.fromSupport)?.sender || "",
         headline: ai.headline ?? "",
-        type: ai.classification ?? "",
+        type: ticketType,
         action: ai.actionNeeded === undefined ? "" : ai.actionNeeded ? "YES" : "no",
         close: ai.suggestClose === undefined ? "" : ai.suggestClose ? "YES" : "no",
         closeReason: ai.closeReason ?? "",
@@ -94,7 +97,7 @@ for (const chat of chats) {
     row.getCell("link").value = { text: "open", hyperlink: chat.url };
     row.getCell("link").font = { color: { argb: "FF0563C1" }, underline: true };
 
-    const typeColor = TYPE_COLORS[ai.classification];
+    const typeColor = TYPE_COLORS[ticketType];
     if (typeColor) {
         row.getCell("type").fill = { type: "pattern", pattern: "solid", fgColor: { argb: typeColor } };
     }

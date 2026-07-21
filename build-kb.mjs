@@ -5,17 +5,19 @@
 //   node build-kb.mjs              # distill the corpus -> data/knowledge.json
 //
 // Corpus source: data/all-chats.json if present (the full incl-closed pull), else
-// falls back to data/inbox.json. Distillation needs an AI backend (ANTHROPIC_API_KEY),
-// otherwise it writes data/kb-digests.json for a free in-session Claude pass (KB-TASK.md).
+// falls back to data/inbox.json. Distillation uses the shared AI backend detection;
+// without one it writes data/kb-digests.json for any coding agent to process (KB-TASK.md).
 //
 // Incremental: threads whose latest message is unchanged are not re-distilled.
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { getAllChats, getChatMessages, mapLimit, requireToken, API_BASE } from "./lib/api.mjs";
 import { mapChat } from "./lib/map.mjs";
 import { backupFile } from "./lib/backup.mjs";
+import { detectAiBackend, parseCustomArgs } from "./lib/ai-backend.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ALL = path.join(here, "data", "all-chats.json");
@@ -26,9 +28,9 @@ const DIGESTS = path.join(here, "data", "kb-digests.json");
 const FETCH = process.argv.includes("--fetch");
 const FORCE = process.argv.includes("--force");
 const argModel = process.argv.indexOf("--model");
-// Bulk mechanical extraction over hundreds of threads — default to an efficient
-// model (Haiku); use --model claude-sonnet-4-6 for a quality bump, or opus if you must.
-const MODEL = argModel !== -1 ? process.argv[argModel + 1] : "claude-haiku-4-5";
+const argBackend = process.argv.indexOf("--backend");
+const REQUESTED_MODEL = argModel !== -1 ? process.argv[argModel + 1] : process.env.TIDY_AI_MODEL;
+const REQUESTED_BACKEND = argBackend !== -1 ? process.argv[argBackend + 1] : undefined;
 
 // ---------- 1. corpus (fetch all incl. closed, or reuse) ----------
 
@@ -154,22 +156,75 @@ for (const e of prevByChat.entries ?? []) {
     cachedFor.get(e.sourceChatId).entries.push(e);
 }
 
-if (!process.env.ANTHROPIC_API_KEY) {
+const AI = detectAiBackend({ preferred: REQUESTED_BACKEND });
+if (!AI.available) {
     console.error(
         [
             "",
             `Wrote ${answerable.length} thread digests -> ${DIGESTS}`,
-            "No ANTHROPIC_API_KEY set, so no Q&A generated yet. Two options:",
-            "  1. Free: ask a Claude session to 'build the knowledge base' (see KB-TASK.md).",
-            "  2. API: export ANTHROPIC_API_KEY=sk-ant-... and re-run.",
+            "No AI provider is available, so no Q&A was generated yet.",
+            "Configure Codex, Claude, a custom AI CLI, or ANTHROPIC_API_KEY and re-run;",
+            "or ask any coding agent to 'build the knowledge base' using KB-TASK.md.",
             "Then open the Knowledge tab in the web app (npm run serve).",
         ].join("\n"),
     );
     process.exit(0);
 }
 
-const { default: Anthropic } = await import("@anthropic-ai/sdk");
-const client = new Anthropic();
+const MODEL = REQUESTED_MODEL ?? (AI.backend === "claude" ? "haiku" : AI.backend === "anthropic-api" ? "claude-haiku-4-5" : null);
+let client = null;
+if (AI.backend === "anthropic-api") {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    client = new Anthropic();
+}
+
+function parseJsonReply(text) {
+    const match = String(text || "").match(/\{[\s\S]*\}/);
+    if (!match) throw new Error(`no JSON in AI reply: ${String(text || "").slice(0, 200)}`);
+    return JSON.parse(match[0]);
+}
+
+function distillViaCommand(command, args, prompt, source, unwrap = (stdout) => stdout) {
+    return new Promise((resolve, reject) => {
+        const proc = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+        let stdout = "", stderr = "";
+        proc.stdout.on("data", (d) => (stdout += d));
+        proc.stderr.on("data", (d) => (stderr += d));
+        proc.on("error", reject);
+        proc.on("close", (code) => {
+            if (code !== 0) return reject(new Error(`${source} exited ${code}: ${stderr.slice(0, 300)}`));
+            try { resolve(parseJsonReply(unwrap(stdout))); }
+            catch (err) { reject(new Error(`bad ${source} output: ${err.message}`)); }
+        });
+        proc.stdin.write(prompt);
+        proc.stdin.end();
+    });
+}
+
+async function distill(c) {
+    if (AI.backend === "anthropic-api") {
+        const res = await client.messages.create({
+            model: MODEL,
+            max_tokens: 2048,
+            system: SYSTEM,
+            output_config: { format: { type: "json_schema", schema: SCHEMA } },
+            messages: [{ role: "user", content: renderThread(c) }],
+        });
+        return res.stop_reason === "refusal" ? { entries: [] } : JSON.parse(res.content.find((b) => b.type === "text")?.text ?? "{}");
+    }
+
+    const prompt = [SYSTEM, "", "Return ONLY a JSON object matching this schema:", JSON.stringify(SCHEMA), "", renderThread(c)].join("\n");
+    if (AI.backend === "codex") {
+        const args = ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", ...(MODEL ? ["--model", MODEL] : []), "-"];
+        return distillViaCommand("codex", args, prompt, "Codex");
+    }
+    if (AI.backend === "claude") {
+        const args = ["-p", "--output-format", "json", ...(MODEL ? ["--model", MODEL] : [])];
+        return distillViaCommand("claude", args, prompt, "Claude Code", (stdout) => JSON.parse(stdout).result ?? "");
+    }
+    const args = parseCustomArgs(process.env.TIDY_AI_ARGS).map((arg) => arg.replaceAll("{model}", MODEL || ""));
+    return distillViaCommand(process.env.TIDY_AI_COMMAND, args, prompt, process.env.TIDY_AI_NAME || "Custom AI");
+}
 
 const lastDate = (c) => c.mostRecentMessageDate ?? c.messages.at(-1)?.date ?? null;
 const out = [];
@@ -185,15 +240,7 @@ async function worker() {
             reused++;
         } else {
             try {
-                const res = await client.messages.create({
-                    model: MODEL,
-                    max_tokens: 2048,
-                    system: SYSTEM,
-                    // The schema is compiled once and reused (24h) across all threads by the API.
-                    output_config: { format: { type: "json_schema", schema: SCHEMA } },
-                    messages: [{ role: "user", content: renderThread(c) }],
-                });
-                const entries = res.stop_reason === "refusal" ? [] : JSON.parse(res.content.find((b) => b.type === "text")?.text ?? "{}").entries ?? [];
+                const entries = (await distill(c)).entries ?? [];
                 for (const e of entries) out.push({ ...e, sourceChatId: c.id, sourceUrl: c.url, parties: c.partiesDescription, status: c.closedDate ? "closed" : "open", __lastDate: lastDate(c) });
             } catch (err) {
                 console.error(`\n! ${c.id}: ${err.message}`);
@@ -203,9 +250,10 @@ async function worker() {
         process.stderr.write(`\rDistilled: ${done}/${answerable.length} (${reused} cached, ${out.length} Q&A so far)`);
     }
 }
-await Promise.all(Array.from({ length: 4 }, worker));
+const concurrency = Number(process.env.TIDY_AI_CONCURRENCY) || (AI.backend === "anthropic-api" ? 4 : AI.backend === "claude" ? 3 : 1);
+await Promise.all(Array.from({ length: concurrency }, worker));
 process.stderr.write("\n");
 
 backupFile(KB);
-fs.writeFileSync(KB, JSON.stringify({ builtAt: new Date().toISOString(), model: MODEL, count: out.length, entries: out }, null, 2));
+fs.writeFileSync(KB, JSON.stringify({ builtAt: new Date().toISOString(), model: `${AI.backend}:${MODEL || "default"}`, count: out.length, entries: out }, null, 2));
 console.error(`Saved ${out.length} Q&A entries -> ${KB}`);

@@ -3,13 +3,14 @@
 // message hasn't changed are not re-summarized.
 //
 // Backends (picked automatically, or force with --backend):
-//   api  — Anthropic API, needs ANTHROPIC_API_KEY (pay per token)
-//   cli  — `claude -p` headless mode, runs on your Claude subscription (free,
-//          needs the CLI: npm i -g @anthropic-ai/claude-code, then run
-//          `claude` once to log in)
+//   codex          — `codex exec`, using your existing Codex login
+//   claude         — `claude -p`, using your existing Claude Code login
+//   anthropic-api  — Anthropic API, needs ANTHROPIC_API_KEY
+//   custom         — any CLI that accepts a prompt on stdin and returns JSON;
+//                    configure TIDY_AI_COMMAND and JSON-array TIDY_AI_ARGS
 //
-// No API key and no CLI? Run fetch.mjs, then ask Claude Code to
-// "summarize the inbox" — see SUMMARIZE-TASK.md.
+// No configured backend? Run fetch.mjs, then ask any capable coding agent to
+// "summarize the inbox" using SUMMARIZE-TASK.md.
 //
 // Usage:
 //   node summarize.mjs
@@ -20,12 +21,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { backupFile } from "./lib/backup.mjs";
+import { detectAiBackend, parseCustomArgs } from "./lib/ai-backend.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const IN = path.join(here, "data", "inbox.json");
 const OUT = path.join(here, "data", "enriched.json");
+const TYPES = path.join(here, "data", "ticket-types.json");
 
 function argValue(flag) {
     const i = process.argv.indexOf(flag);
@@ -35,36 +38,24 @@ const FORCE = process.argv.includes("--force");
 
 // ---------- backend selection ----------
 
-function cliAvailable() {
-    try {
-        return spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
-    } catch {
-        return false;
-    }
+const AI = detectAiBackend({ preferred: argValue("--backend") });
+if (!AI.available) {
+    console.error(
+        [
+            "No AI summarization provider is available. Options:",
+            "  1. Codex: install Codex CLI and run `codex login`.",
+            "  2. Claude: install Claude Code and sign in.",
+            "  3. Custom CLI: set TIDY_AI_COMMAND and optional JSON-array TIDY_AI_ARGS.",
+            "  4. Anthropic API: set ANTHROPIC_API_KEY.",
+            "The app still shows opening-message previews without AI.",
+        ].join("\n"),
+    );
+    process.exit(1);
 }
 
-let BACKEND = argValue("--backend");
-if (!BACKEND) {
-    if (process.env.ANTHROPIC_API_KEY) BACKEND = "api";
-    else if (cliAvailable()) BACKEND = "cli";
-    else {
-        console.error(
-            [
-                "No summarization backend available. Options:",
-                "  1. Free (your Claude subscription): npm i -g @anthropic-ai/claude-code",
-                "     then run `claude` once to log in, then re-run this script.",
-                "  2. API: export ANTHROPIC_API_KEY=sk-ant-...",
-                "  3. Free, no install: run fetch.mjs, then ask Claude Code to",
-                "     'summarize the inbox' (see SUMMARIZE-TASK.md).",
-            ].join("\n"),
-        );
-        process.exit(1);
-    }
-}
-
-// Model defaults per backend. CLI accepts aliases (haiku/sonnet/opus).
-const MODEL = argValue("--model") ?? (BACKEND === "cli" ? "haiku" : "claude-opus-4-8");
-const CONCURRENCY = BACKEND === "cli" ? 3 : 4;
+const BACKEND = AI.backend;
+const MODEL = argValue("--model") ?? process.env.TIDY_AI_MODEL ?? (BACKEND === "claude" ? "haiku" : BACKEND === "anthropic-api" ? "claude-opus-4-8" : null);
+const CONCURRENCY = Number(process.env.TIDY_AI_CONCURRENCY) || (BACKEND === "anthropic-api" ? 4 : BACKEND === "claude" ? 3 : 1);
 
 if (!fs.existsSync(IN)) {
     console.error(`No ${IN} — run \`node fetch.mjs\` first.`);
@@ -136,16 +127,25 @@ function renderChat(chat) {
     return lines.join("\n");
 }
 
-const FALLBACK = (headline, summary, actionNeeded = true) => ({
+const FALLBACK = (headline, summary, actionNeeded = true, unavailableReason = null) => ({
     headline,
     summary,
     classification: "not sure",
     actionNeeded,
     suggestClose: false,
     closeReason: "",
+    ...(unavailableReason ? { unavailableReason } : {}),
 });
 
-// ---------- backend: api ----------
+function friendlyFailure(err) {
+    const detail = String(err?.message || err || "unknown error");
+    if (err?.code === "ENOENT" || /exited \d+/i.test(detail)) {
+        return `${AI.source || "AI provider"} summarization is unavailable. Check that the provider is installed, configured, and signed in, then try again.`;
+    }
+    return "The summary could not be generated. Check the summarization setup and try again.";
+}
+
+// ---------- backend: Anthropic API ----------
 
 let apiClient = null;
 async function summarizeViaApi(chat) {
@@ -167,10 +167,10 @@ async function summarizeViaApi(chat) {
     return JSON.parse(text);
 }
 
-// ---------- backend: cli (claude -p, uses your subscription) ----------
+// ---------- CLI backends ----------
 
-function summarizeViaCli(chat) {
-    const prompt = [
+function buildPrompt(chat) {
+    return [
         SYSTEM,
         "",
         "Analyze the thread below and respond with ONLY a JSON object (no markdown fences, no prose) with exactly these fields:",
@@ -182,27 +182,28 @@ function summarizeViaCli(chat) {
         "",
         renderChat(chat),
     ].join("\n");
+}
 
+function parseJsonReply(text) {
+    const match = String(text || "").match(/\{[\s\S]*\}/);
+    if (!match) throw new Error(`no JSON in AI reply: ${String(text || "").slice(0, 200)}`);
+    return JSON.parse(match[0]);
+}
+
+function runAiCommand(command, args, prompt, source, unwrap = (stdout) => stdout) {
     return new Promise((resolve, reject) => {
-        const proc = spawn("claude", ["-p", "--output-format", "json", "--model", MODEL], {
-            stdio: ["pipe", "pipe", "pipe"],
-        });
+        const proc = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
         let stdout = "";
         let stderr = "";
         proc.stdout.on("data", (d) => (stdout += d));
         proc.stderr.on("data", (d) => (stderr += d));
         proc.on("error", reject);
         proc.on("close", (code) => {
-            if (code !== 0) return reject(new Error(`claude exited ${code}: ${stderr.slice(0, 300)}`));
+            if (code !== 0) return reject(new Error(`${source} exited ${code}: ${stderr.slice(0, 300)}`));
             try {
-                const envelope = JSON.parse(stdout);
-                const result = envelope.result ?? "";
-                // extract the first JSON object from the reply
-                const match = result.match(/\{[\s\S]*\}/);
-                if (!match) return reject(new Error(`no JSON in CLI reply: ${result.slice(0, 200)}`));
-                resolve(JSON.parse(match[0]));
+                resolve(parseJsonReply(unwrap(stdout)));
             } catch (err) {
-                reject(new Error(`bad CLI output: ${err.message}: ${stdout.slice(0, 200)}`));
+                reject(new Error(`bad ${source} output: ${err.message}: ${stdout.slice(0, 200)}`));
             }
         });
         proc.stdin.write(prompt);
@@ -210,9 +211,25 @@ function summarizeViaCli(chat) {
     });
 }
 
+function summarizeViaClaude(chat) {
+    const args = ["-p", "--output-format", "json", ...(MODEL ? ["--model", MODEL] : [])];
+    return runAiCommand("claude", args, buildPrompt(chat), "Claude Code", (stdout) => JSON.parse(stdout).result ?? "");
+}
+
+function summarizeViaCodex(chat) {
+    const args = ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", ...(MODEL ? ["--model", MODEL] : []), "-"];
+    return runAiCommand("codex", args, buildPrompt(chat), "Codex");
+}
+
+function summarizeViaCustom(chat) {
+    const command = process.env.TIDY_AI_COMMAND;
+    const args = parseCustomArgs(process.env.TIDY_AI_ARGS).map((arg) => arg.replaceAll("{model}", MODEL || ""));
+    return runAiCommand(command, args, buildPrompt(chat), process.env.TIDY_AI_NAME || "Custom AI");
+}
+
 // ---------- run ----------
 
-const summarize = BACKEND === "cli" ? summarizeViaCli : summarizeViaApi;
+const summarize = { "anthropic-api": summarizeViaApi, claude: summarizeViaClaude, codex: summarizeViaCodex, custom: summarizeViaCustom }[BACKEND];
 
 const inbox = JSON.parse(fs.readFileSync(IN, "utf8"));
 const previous = fs.existsSync(OUT) && !FORCE
@@ -232,10 +249,11 @@ function sanitize(ai) {
 }
 
 const chats = inbox.chats;
-console.error(`Summarizing ${chats.length} chats via ${BACKEND} backend, model ${MODEL}...`);
+console.error(`Summarizing ${chats.length} chats via ${AI.source}${MODEL ? `, model ${MODEL}` : ""}...`);
 
 let done = 0;
 let reused = 0;
+let failures = 0;
 const out = [];
 let next = 0;
 async function worker() {
@@ -245,7 +263,8 @@ async function worker() {
         const chat = chats[i];
 
         const prev = previous.get(chat.id);
-        if (prev && prev.ai && prev.mostRecentMessageDate === chat.mostRecentMessageDate) {
+        const previousFailed = prev?.ai && (prev.ai.unavailableReason || prev.ai.headline === "(error)" || /^Summarization failed:/i.test(prev.ai.summary || ""));
+        if (prev && prev.ai && !previousFailed && prev.mostRecentMessageDate === chat.mostRecentMessageDate) {
             out[i] = { ...chat, ai: prev.ai };
             reused++;
         } else if (chat.messages.length === 0) {
@@ -254,8 +273,10 @@ async function worker() {
             try {
                 out[i] = { ...chat, ai: sanitize(await summarize(chat)) };
             } catch (err) {
-                console.error(`\n! Chat ${chat.id}: ${err.message}`);
-                out[i] = { ...chat, ai: FALLBACK("(error)", `Summarization failed: ${err.message}`) };
+                failures++;
+                if (failures <= 3) console.error(`\n! Chat ${chat.id}: ${friendlyFailure(err)}`);
+                else if (failures === 4) console.error("\n! Further summarization errors hidden.");
+                out[i] = { ...chat, ai: FALLBACK("Summary unavailable", friendlyFailure(err), true, "summarization") };
             }
         }
         done++;
@@ -266,9 +287,16 @@ await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 process.stderr.write("\n");
 
 backupFile(OUT);
-fs.writeFileSync(OUT, JSON.stringify({ ...inbox, model: `${BACKEND}:${MODEL}`, summarizedAt: new Date().toISOString(), chats: out }, null, 2));
+fs.writeFileSync(OUT, JSON.stringify({ ...inbox, model: `${BACKEND}:${MODEL || "default"}`, summarizedAt: new Date().toISOString(), chats: out }, null, 2));
 console.error(`Saved -> ${OUT}`);
+
+// AI classification is authoritative when explicitly run: discard every manual
+// type so the UI, filters, proposals, and exports all use the new AI result.
+backupFile(TYPES);
+fs.writeFileSync(TYPES, JSON.stringify({ updatedAt: new Date().toISOString(), types: {} }, null, 2));
+console.error("Cleared manual ticket types (AI classifications now take precedence).");
 
 const counts = out.reduce((acc, c) => ((acc[c.ai.classification] = (acc[c.ai.classification] ?? 0) + 1), acc), {});
 const closeable = out.filter((c) => c.ai.suggestClose && !c.closedDate).length;
 console.error(`Classification: ${JSON.stringify(counts)} | suggested to close: ${closeable}`);
+if (failures) console.error(`${failures} summaries unavailable — check the ${AI.source || "AI provider"} setup, then run Summarize again.`);

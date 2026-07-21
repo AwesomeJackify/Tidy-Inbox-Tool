@@ -33,7 +33,7 @@ and closes finished threads in bulk.
    │ summarize.mjs│──────▶│data/enriched.json│        │ review-bugs.mjs│
    └──────────────┘       │ (AI summary +    │        └───────┬────────┘
     needs an AI backend   │  bug/feature +   │        no API — pure JS
-    (or in-session Claude)│  suggest-close)  │                │
+    (or any coding agent) │  suggest-close)  │                │
                           └────────┬─────────┘   reads bugs   │ writes
                                    │             + verdicts    ▼
               status+messages      │        ┌──────────────────────────┐
@@ -45,8 +45,8 @@ and closes finished threads in bulk.
                                   ▼                     │
                         ┌──────────────────┐   ┌────────────────────────┐
                         │ inbox-report.xlsx│   │ data/bug-verdicts.json │
-                        │ (edit "My action"│   │ (from Claude reading    │
-                        │  = close here)   │   │  the digests, free)     │
+                        │ (edit "My action"│   │ (from an AI agent       │
+                        │  = close here)   │   │  reading the digests)   │
                         └──────────────────┘   └────────────────────────┘
 ```
 
@@ -57,7 +57,8 @@ and closes finished threads in bulk.
 
 **Two independent things touch the outside world** (everything else is local JS):
 - **CRM network:** `fetch`, `sync`, `close-chats` (via `lib/api.mjs`).
-- **AI:** `summarize` (optional backend), or a Claude session doing it free in-session.
+- **AI:** `summarize` (optional Codex, Claude, Anthropic API, or custom CLI backend), or
+  any capable coding-agent session following the task files.
 
 ---
 
@@ -78,8 +79,8 @@ review to the terminal with a ready close command, instead of the HTML page.
 
 `serve.mjs` (`npm run serve`) is the web-app front end — see below.
 
-\* `summarize` needs an AI backend, or skip it and let a Claude session do the analysis
-in-session for free (see [SUMMARIZE-TASK.md](SUMMARIZE-TASK.md) /
+\* `summarize` needs an AI backend, or skip it and let Codex or another coding agent do
+the analysis in-session (see [SUMMARIZE-TASK.md](SUMMARIZE-TASK.md) /
 [REVIEW-BUGS-TASK.md](REVIEW-BUGS-TASK.md)).
 
 `lib/` holds shared helpers: `api.mjs` (CRM client + retry), `map.mjs` (DTO→local shape),
@@ -103,9 +104,15 @@ export TIDY_TOKEN='eyJ...'
 Expires; re-grab when you see a 401. Point at staging with `export TIDY_API=https://crm-gateway.tidystaging.com`.
 
 **2. AI backend** (summaries only) — pick one:
-- **Free, no install:** ask a Claude Code session to "summarize the inbox" / "review the bugs".
-- **Free, scripted:** `npm i -g @anthropic-ai/claude-code`, run `claude` once to log in — `summarize.mjs` auto-uses it.
-- **API:** `export ANTHROPIC_API_KEY='sk-ant-...'`.
+- **Codex:** install/login to the Codex CLI; `summarize.mjs` auto-detects `codex exec`.
+- **Claude:** install/login to Claude Code; it is also auto-detected.
+- **Custom AI CLI:** set `TIDY_AI_COMMAND`, with optional JSON-array `TIDY_AI_ARGS`.
+  The command receives the prompt on stdin and must print a JSON object. Use `{model}` in
+  an argument when it should be replaced by `TIDY_AI_MODEL`.
+- **Anthropic API:** set `ANTHROPIC_API_KEY`.
+
+Set `TIDY_AI_BACKEND=codex|claude|custom|anthropic-api` to force a provider. Without
+that setting the order is custom command, Anthropic API, Codex, then Claude.
 
 ---
 
@@ -142,7 +149,7 @@ open bug-review.html
 The page groups open bugs into **fixed-unconfirmed / unclear / active**, pre-ticks the
 fixed ones, shows the last few replies, and has a **Copy close command** button that emits
 a `close-chats --ids --apply` line for whatever's ticked. The grouping comes from
-`data/bug-verdicts.json` — produced by a Claude session reading `data/bug-digests.json`
+`data/bug-verdicts.json` — produced by any capable AI session reading `data/bug-digests.json`
 (see REVIEW-BUGS-TASK.md). Without it, the page still lists every open bug, ungrouped.
 
 ---
@@ -152,19 +159,49 @@ a `close-chats --ids --apply` line for whatever's ticked. The grouping comes fro
 export TIDY_TOKEN='...'   # needed for the Sync/Close buttons
 npm run serve             # then open http://localhost:8787
 ```
-A local dashboard over the same data files. Two tabs:
+A local dashboard over the same data files. Five main tabs:
 
-- **Inbox** — searchable/filterable table of every thread (like the spreadsheet but live).
-- **Reviewer** — filter by **Bugs / Bugs+features / Features / Everything open**, then work
-  through them in one of three modes:
-  - **Cards** — all threads as chat-bubble cards, each with Close / Keep / Skip buttons.
-  - **One at a time** — a Tinder-style flow: one thread on screen, decide with the buttons
-    or arrow keys (← Close · ↓ Skip · → Keep · Backspace back), auto-advances.
-  - **Review choices** — a summary grouped by your decisions, with **Copy close ids**,
-    **Copy close command**, and **Close N in CRM** (closes directly + re-syncs).
+- **Dashboard** — a read-only workload and prioritisation view: open volume, customer-waiting
+  tickets, aging, ticket mix, clients needing attention, and the oldest conversations.
+- **Outstanding** — genuinely undecided open tickets that have not been marked Keep or Close, with an AI-free
+  preview of the customer's opening message when no summary is available. Click the context to
+  open the full conversation in a scrollable modal without leaving the app. Mix and match
+  **Bug / Feature / Not sure** filters and set Keep or Close. Leaving a ticket untouched is the
+  default “deal with later” behaviour; there is no separate Skip action.
+- **Inbox** — the full ticket-management workspace with Keep / Close controls, type changes,
+  conversations, CRM reply links, and reopening. Clicking a selected Keep again clears the
+  decision and returns that ticket to Outstanding. Open tickets appear after a Keep or Close decision;
+  **Include undecided** temporarily restores the complete raw view. Closed tickets remain available
+  through the status filter and can be reopened directly in the CRM after confirmation. Ticket type can be set manually to **Bug**, **Feature**, or **Not sure**
+  from Inbox, Outstanding, or the conversation modal.
+- **Release follow-up** — group shipped PRs under a release name or version, map each PR to one or
+  more open CRM tickets, see which customers still need a release response, reply in the CRM, and
+  mark each response completed. Closing a release closes all of its mapped CRM tickets and records
+  the individual ticket actions. Mappings and response changes are included in the audit history.
+- **Proposals** — select unassigned **Feature requests**, create an editable AI-assisted or manual
+  proposal, and send it for boss sign-off. Boss review has separate actions to send a proposal back
+  to Draft, decline it while keeping it visible, or close its source CRM ticket. Approval keeps
+  the proposal in Boss review, closes its source CRM tickets, and can later be manually marked Completed.
+  Deleting a proposal releases its source tickets back into Feature requests. Every boss-ready
+  proposal requires estimated developer effort, indicative start/completion dates, and explicit
+  estimate assumptions. Each proposal starts with a plain-language summary and a grounded customer
+  perspective that names the person and company only when the ticket supplies them. **Draft all for boss review** creates one estimated proposal per unassigned
+  Feature request using the configured AI provider. **Export boss review to Markdown** creates one
+  plain decision pack with simple headers, estimates, and source tickets.
+- **Knowledge** — search known problems and answers, or filter by client to find recurring
+  issue areas and review that client's related tickets.
+- **More tools → Audit history** — a durable, searchable record of ticket status/type changes,
+  CRM close/reopen attempts, Sync, Summarise, and Excel exports, including staff and timestamps.
 
-  Your decisions persist (localStorage), so a refresh keeps your place. The header buttons
-  run Sync / Summarize / Rebuild sheet / Re-review bugs and stream output into a log panel.
+  Ticket decisions and their history persist in `data/ticket-actions.json`; localStorage only
+  keeps personal UI preferences such as filters. A global decision bar
+  stays available across every tab with totals, bulk Close, and bulk **Undo close marks**.
+  Selecting **Close** only queues a decision. After confirmation, **Close N in CRM** calls
+  `POST /v1/chats/{id}/close` through the local app server with the CRM bearer token, records
+  success or failure in Audit history, and runs Sync.
+  **Sync now** is the primary header action. Less-frequent actions live under **More tools**:
+  AI summarization (disabled when no AI backend is available) and **Export to Excel**, which
+  rebuilds and opens `inbox-report.xlsx`. Their output streams into a hideable log panel.
   Localhost only, no new deps.
 
 The web app doesn't replace the scripts — it *drives* them. You can use any mix of CLI,
@@ -189,8 +226,8 @@ answering common questions fast.
 
 ```bash
 node build-kb.mjs --fetch    # pull ALL chats incl. closed -> data/all-chats.json (needs TIDY_TOKEN)
-node build-kb.mjs            # distil -> data/knowledge.json (needs ANTHROPIC_API_KEY)
-                             #   …or, free: ask a Claude session to "build the knowledge base"
+node build-kb.mjs            # distil -> data/knowledge.json (uses the same AI provider)
+                             #   …or ask Codex/another agent to "build the knowledge base"
                              #   (it follows KB-TASK.md over data/kb-digests.json)
 ```
 
@@ -208,6 +245,9 @@ lib/*.mjs             shared helpers
 *-TASK.md             instructions for the free in-session AI steps
 data/inbox.json       source of truth (status, messages) — rebuildable via fetch
 data/enriched.json    AI summary/classification columns
+data/proposals.json   feature proposals, sign-off state, and decision history
+data/ticket-types.json  shared manual Bug / Feature / Not sure selections
+data/ticket-actions.json durable ticket decisions, action timestamps, and audit events
 data/bug-verdicts.json  bug review verdicts (id -> {verdict, reason})
 data/bug-digests.json   compact bug transcripts (input for AI analysis)
 data/backups/         auto-backups (last 20 of each file, before every overwrite)
@@ -215,15 +255,17 @@ inbox-report.xlsx     the spreadsheet (edit "My action" to close)
 bug-review.html       the bug review page
 ```
 
-Everything under `data/`, plus the `.xlsx`/`.html`, is rebuildable from the CRM, so it's
-gitignored. Every script backs up the file it's about to overwrite into `data/backups/`
-first (keeps 20), so an accidental run is always one copy-back away from undone.
+CRM-derived data plus the `.xlsx`/`.html` is rebuildable and gitignored. `data/proposals.json`,
+`data/ticket-types.json`, and `data/ticket-actions.json` contain human decisions and are not rebuildable from the CRM, so
+include them in normal internal backups. Running AI Summarize intentionally clears all manual
+ticket types and replaces them with its classifications. Saves make rolling copies in `data/backups/`.
 
 ## API endpoints used
 
 - `POST /v1/chats/get` — paged chat list (`ChatFilter`; `startRow/endRow: null` = all)
 - `POST /v1/chat-messages/get` — all messages per chat (`{chatId, includeNotes}`)
 - `POST /v1/chats/{id}/close` — close
+- `POST /v1/chats/{id}/reopen` — reopen a closed ticket
 
 Same API and bearer token the CRM frontend uses. Transient gateway errors (the CRM's own
 backend being briefly unavailable) are retried automatically.

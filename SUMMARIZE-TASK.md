@@ -1,13 +1,13 @@
-# Task: summarize the inbox (for Claude Code, in-session)
+# Task: summarize the inbox (for any capable coding agent)
 
 This is the zero-setup free path: instead of running `summarize.mjs` (which needs an
-API key or the `claude` CLI), a Claude Code session performs the summarize step itself.
+available AI backend), a Codex, Claude, or other coding-agent session performs the step.
 
-## Instructions for Claude
+## Instructions for the agent
 
 Input: `data/inbox.json` (produced by `node fetch.mjs`).
 Output: `data/enriched.json` — identical structure, but each chat gains an `ai` object,
-plus top-level `model: "claude-code-session"` and `summarizedAt: <ISO timestamp>`.
+plus top-level `model: "<agent-name>-session"` and `summarizedAt: <ISO timestamp>`.
 
 Be incremental: if `data/enriched.json` already exists, copy the existing `ai` object
 for any chat whose `mostRecentMessageDate` is unchanged; only summarize new/updated chats.
