@@ -53,6 +53,8 @@ function crmTokenStatus() {
 async function checkCrmToken() {
     const current = crmTokenStatus();
     if (!current.available) return current;
+    // Skip network check if verified within the last 4 minutes
+    if (tokenVerifiedAt && (Date.now() - new Date(tokenVerifiedAt).getTime()) < 4 * 60 * 1000) return current;
     try {
         await verifyToken();
         tokenRejected = false;
@@ -149,6 +151,7 @@ function readData() {
         activityLast: actionIsLatest ? appAction.at : crmLast,
         activitySource: actionIsLatest ? "app" : "crm",
         latestAction: appAction,
+        leftOnRead: c.leftOnRead ?? false,
         status: c.deleted ? "deleted" : c.closedDate ? "closed" : "open",
         msgs: c.messages?.length ?? 0,
         url: c.url,
@@ -161,6 +164,11 @@ function readData() {
             : null,
         // recent messages; staff tagged server-side (see isStaff above)
         tail: messages.filter((m) => !m.isNote).slice(-8).map((m) => ({ sender: m.sender, date: m.date, text: (m.text || "").slice(0, 900), staff: isStaff(m.sender) })),
+        conversationSearch: messages
+            .map((message) => `${message.sender || ""} ${message.text || ""}`)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim(),
     };
     });
     const ai = summarizationStatus();
@@ -239,7 +247,7 @@ function proposalPrompt(chats) {
         })(),
     }));
     const today = new Date().toISOString().slice(0, 10);
-    return `You are helping a small software company turn customer feature requests into a concise proposal for management approval. Combine supplied tickets only when they describe the same underlying need. Stay factual, cite client evidence, and never invent names, revenue, sentiment, integrations, or requirements. Every proposal requires an indicative development estimate. Estimate conservatively from the requested scope, state uncertainty, and treat dates as planning guidance rather than commitments. Today is ${today}. Return ONLY JSON with these string fields: title, eli5Summary, customerPerspective, executiveSummary, problem, impact, scope, risks, questions, priority, estimatedDevEffort, estimatedStartDate, estimatedCompletionDate, estimateAssumptions; and an evidence array of short strings. "eli5Summary" must explain the request in 1–2 very simple, jargon-free sentences. "customerPerspective" must explain the issue from the customer's point of view in 1–3 sentences, naming the person and company only when the ticket explicitly supplies them—for example, "Rosalind from Rozcraft wants... because..." Otherwise say "The customer at [company]...". Dates must use YYYY-MM-DD. "scope" should state a useful first version and explicit non-goals. "priority" should recommend low, medium, or high with a brief reason. "estimatedDevEffort" should be a realistic developer-day range. Dates should assume approval and developer capacity are available, and estimateAssumptions must make that assumption and important technical unknowns explicit.\n\nSource tickets:\n${JSON.stringify(sources)}`;
+    return `You are helping a small software company turn customer feature requests into a concise proposal for management approval. Combine supplied tickets only when they describe the same underlying need. Stay factual, cite client evidence, and never invent names, revenue, sentiment, integrations, or requirements. Every proposal requires an indicative development estimate. Estimate conservatively from the requested scope, state uncertainty, and treat dates as planning guidance rather than commitments. Today is ${today}. Return ONLY JSON with these string fields: title, eli5Summary, customerPerspective, executiveSummary, problem, impact, scope, risks, questions, priority, estimatedDevEffort, estimatedStartDate, estimatedCompletionDate, estimateAssumptions; and an evidence array of short strings. "eli5Summary" must explain the request in 1–2 very simple, jargon-free sentences from the customer's perspective, using the customer's name and company when explicitly supplied. "customerPerspective" must explain the issue from the customer's point of view in 1–3 sentences, naming the person and company only when the ticket explicitly supplies them—for example, "Rosalind from Rozcraft wants... because..." Otherwise say "The customer at [company]...". "executiveSummary" must be a detailed 3–5 sentence management statement covering the problem, proposed high-level delivery, expected benefit, and key boundary or uncertainty. Dates must use YYYY-MM-DD. "scope" must begin with one high-level sentence describing what to deliver, followed by a useful first version and explicit non-goals. "priority" should recommend low, medium, or high with a brief reason. "estimatedDevEffort" must be a conservative developer-day range for one developer. Dates should assume approval and developer capacity are available, and estimateAssumptions must make that assumption and important technical unknowns explicit.\n\nSource tickets:\n${JSON.stringify(sources)}`;
 }
 
 function cleanProposalDraft(value, sourceChatIds, aiSource = null) {
@@ -342,6 +350,7 @@ const server = http.createServer(async (req, res) => {
             const saved = {
                 id: existing?.id || randomUUID(),
                 releaseName,
+                releaseBuild: String(followup.releaseBuild || "").trim(),
                 prNumber,
                 prTitle: String(followup.prTitle || "").trim(),
                 prUrl: String(followup.prUrl || "").trim(),
@@ -729,6 +738,15 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
+<dialog id="undoCloseModal" class="modal">
+  <div class="modal-box w-[96vw] max-w-[96vw] p-0 overflow-hidden">
+    <div class="flex items-center gap-3 p-4 border-b"><div><h3 class="font-bold text-lg">Undo Close marks</h3><p class="text-sm opacity-60">Choose which tickets should no longer be marked Close.</p></div><form method="dialog" class="ml-auto"><button class="btn btn-sm btn-ghost" aria-label="Cancel">✕</button></form></div>
+    <div class="flex items-center gap-2 px-4 py-2 border-b bg-base-200"><label class="flex items-center gap-2 cursor-pointer"><input id="undoCloseAll" type="checkbox" class="checkbox checkbox-sm" onchange="toggleUndoCloseSelection(this.checked)"><span class="text-sm">Select all</span></label><span id="undoCloseCount" class="text-sm opacity-60 ml-auto">0 selected</span></div>
+    <div id="undoCloseList" class="max-h-[60vh] overflow-auto"></div>
+    <div class="flex justify-end gap-2 p-4 border-t"><form method="dialog"><button class="btn btn-sm">Cancel</button></form><button class="btn btn-sm btn-neutral" onclick="undoSelectedCloseMarks()">Undo selected</button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>cancel</button></form>
+</dialog>
 <div id="foot" class="hidden fixed bottom-0 inset-x-0 bg-neutral text-neutral-content px-4 py-2 items-center gap-3 flex-wrap z-30"></div>
 <script>
 let DATA={chats:[]}, TAB='dashboard', RELEASE_FOLLOWUPS=null, EDIT_RELEASE=null;
@@ -770,7 +788,12 @@ function typeBadge(c){
 }
 function decisionPicker(c){
   const current=REVIEW.decisions[c.id]||'';
-  const button=(value,label,selected)=>\`<button type="button" class="btn btn-xs join-item \${current===value?selected:'btn-outline'}" onclick="event.stopPropagation();setDecide('\${c.id}','\${value}')" title="Click again to clear">\${label}</button>\`;
+  const button=(value,label,selected)=>{const active=current===value;return \`<button type="button" class="btn btn-xs join-item \${active?selected+' disabled:opacity-100':'btn-outline'}" \${active?'disabled aria-disabled="true"':\`onclick="event.stopPropagation();setDecide('\${c.id}','\${value}')"\`} title="\${active?label+' is selected. Choose the other status to change it.':'Set status to '+label}">\${label}</button>\`;};
+  return \`<div class="join whitespace-nowrap" aria-label="Triage ticket">\${button('close','Close','btn-error')}\${button('keep','Keep','btn-success')}</div>\`;
+}
+function outstandingDecisionPicker(c){
+  const staged=pendingOutstanding[c.id]||'';
+  const button=(value,label,cls)=>{const active=staged===value;return \`<button type="button" class="btn btn-xs join-item \${active?cls:'btn-outline'}" onclick="event.stopPropagation();stageOutstanding('\${c.id}','\${value}')" title="\${active?'Click to deselect':'Set to '+label}">\${label}</button>\`;};
   return \`<div class="join whitespace-nowrap" aria-label="Triage ticket">\${button('close','Close','btn-error')}\${button('keep','Keep','btn-success')}</div>\`;
 }
 async function setTicketType(id,type){
@@ -816,7 +839,7 @@ async function load(){ DATA=await (await fetch('/api/data')).json();
   summarize.classList.toggle('opacity-40',!DATA.aiAvailable);
   document.getElementById('summarizeHint').textContent=DATA.aiAvailable?'Available via '+DATA.aiSource+' · replaces manual ticket types':'Unavailable — configure or sign in to an AI provider';
   render();
-  if(DATA.hasToken&&DATA.crmState!=='expired')refreshTokenStatus();
+  if(DATA.hasToken&&DATA.crmState==='unverified')refreshTokenStatus();
 }
 function paintTokenStatus(checking=false){
   const dot=document.getElementById('tokdot'),text=document.getElementById('toktext'),button=document.getElementById('tokenButton');if(!dot||!text||!button)return;
@@ -827,11 +850,14 @@ function paintTokenStatus(checking=false){
   dot.className='inline-block w-2 h-2 rounded-full mr-1 '+(styles[state]||'bg-warning');text.textContent=checking?'Checking token · '+seconds+'s':(labels[state]||'Token status unknown');
   const checked=DATA.crmVerifiedAt?' Last verified '+new Date(DATA.crmVerifiedAt).toLocaleTimeString()+'.':'';button.title=(DATA.crmReason||labels[state])+checked+' Click to update the token.';
 }
-async function refreshTokenStatus(){
-  if(TOKEN_CHECK_IN_FLIGHT||!DATA.hasToken)return;TOKEN_CHECK_IN_FLIGHT=true;TOKEN_CHECK_DEADLINE=Date.now()+4000;paintTokenStatus(true);clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=setInterval(()=>paintTokenStatus(true),250);
+async function refreshTokenStatus(force=false){
+  if(TOKEN_CHECK_IN_FLIGHT||!DATA.hasToken)return;
+  if(!force&&DATA.crmState==='verified'&&DATA.crmVerifiedAt&&(Date.now()-new Date(DATA.crmVerifiedAt).getTime()<5*60*1000))return;
+  TOKEN_CHECK_IN_FLIGHT=true;TOKEN_CHECK_DEADLINE=Date.now()+4000;paintTokenStatus(true);clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=setInterval(()=>paintTokenStatus(true),250);
+  const hardTimeout=setTimeout(()=>{if(!TOKEN_CHECK_IN_FLIGHT)return;TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;DATA.crmState='unknown';DATA.crmReason='Token check timed out.';paintTokenStatus();},5000);
   try{const state=await (await fetch('/api/token/check',{method:'POST',signal:AbortSignal.timeout(4000)})).json();DATA.crmAvailable=state.available;DATA.crmState=state.state;DATA.crmVerifiedAt=state.verifiedAt;DATA.crmReason=state.reason;paintTokenStatus();updateSyncState();}
   catch{DATA.crmState='unknown';DATA.crmReason='The CRM token check timed out. You can retry by reloading or clicking Token.';paintTokenStatus();}
-  finally{TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;paintTokenStatus();}
+  finally{clearTimeout(hardTimeout);TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;paintTokenStatus();}
 }
 function updateSyncState(){
   const button=document.getElementById('syncButton');
@@ -918,10 +944,25 @@ async function persistDecision(id,decision){
   const result=await (await fetch('/api/decision',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,decision,by:auditActor()})})).json();
   if(!result.ok){alert(result.error||'The ticket status could not be saved.');return false;}
   if(result.decision===null)delete REVIEW.decisions[id];else REVIEW.decisions[id]=result.decision;
-  applyLocalActivity(DATA.chats.find(c=>c.id===id),result.event);saveReview();return true;
+  // The server records the action timestamp immediately. Keep the current
+  // browser ordering stable; the new activity order is applied on refresh.
+  saveReview();return true;
 }
+const pendingOutstanding={};
+function stageOutstanding(id,d){
+  if(pendingOutstanding[id]===d){delete pendingOutstanding[id];}else{pendingOutstanding[id]=d;}
+  outstandingRows();
+}
+async function confirmOutstanding(){
+  const entries=Object.entries(pendingOutstanding);if(!entries.length)return;
+  const ok=await Promise.all(entries.map(([id,d])=>persistDecision(id,d)));
+  entries.forEach(([id],i)=>{if(ok[i])delete pendingOutstanding[id];});
+  outstandingRows();footerBar();
+}
+function clearOutstanding(){Object.keys(pendingOutstanding).forEach(k=>delete pendingOutstanding[k]);outstandingRows();}
 async function setDecide(id,d){
-  const next=REVIEW.decisions[id]===d?null:d;if(!await persistDecision(id,next))return;
+  if(REVIEW.decisions[id]===d)return;
+  if(!await persistDecision(id,d))return;
   if(TAB==='outstanding')outstandingRows();else if(TAB==='inbox')inboxRows(); footerBar();
 }
 function renderOutstanding(){
@@ -946,16 +987,34 @@ function outstandingRows(){
     if(window._oq){ const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.summary||'')).toLowerCase(); if(!hay.includes(window._oq)) return false; }
     return true;
   }).sort((a,b)=>new Date(a.last||0)-new Date(b.last||0));
+  const pendingCount=Object.keys(pendingOutstanding).length;
+  const pendingClose=Object.values(pendingOutstanding).filter(v=>v==='close').length;
+  const pendingKeep=Object.values(pendingOutstanding).filter(v=>v==='keep').length;
   document.getElementById('ocount').innerHTML=\`<b>\${list.length}</b> outstanding — no management decision yet\`;
-  document.getElementById('otbl').innerHTML=\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
+  const confirmBar=pendingCount?\`<div class="flex items-center gap-3 mb-3 p-3 bg-base-200 rounded-lg border border-base-300">
+    <span class="text-sm font-semibold">\${pendingCount} staged:</span>
+    \${pendingClose?'<span class="badge badge-error badge-sm">'+pendingClose+' close</span>':''}
+    \${pendingKeep?'<span class="badge badge-success badge-sm">'+pendingKeep+' keep</span>':''}
+    <div class="ml-auto flex gap-2">
+      <button class="btn btn-sm btn-ghost" onclick="clearOutstanding()">Clear</button>
+      <button class="btn btn-sm btn-primary" onclick="confirmOutstanding()">Confirm all</button>
+    </div></div>\`:'';
+  document.getElementById('otbl').innerHTML=confirmBar+\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
     <thead><tr><th>Last activity</th><th>From</th><th>Type</th><th>Context</th><th>Decide</th><th></th></tr></thead><tbody>
-    \${list.map(c=>\`<tr class="hover"><td class="opacity-60 whitespace-nowrap">\${day(c.last)}</td>
-      <td>\${esc(c.parties||'')}</td><td>\${typePicker(c)}</td>
-      <td class="max-w-md">\${contextHtml(c,150)}</td>
-      <td>\${decisionPicker(c)}</td>
-      <td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')
+    \${list.map(c=>outstandingRow(c)).join('')
       || '<tr><td colspan="6" class="opacity-60 p-4">Nothing outstanding — every open ticket has a management decision. 🎉</td></tr>'}
     </tbody></table></div>\`;
+}
+function outstandingRow(c){
+  const staged=pendingOutstanding[c.id];
+  const badgeCls=staged==='close'?'badge-error':'badge-success';
+  const cells=staged
+    ?'<td colspan="4" class="whitespace-nowrap"><span class="badge '+badgeCls+' badge-sm mr-2">'+staged+'</span> '+esc(c.code||'')+' · '+esc(c.parties||'')+'</td>'
+    :'<td class="opacity-60 whitespace-nowrap">'+day(c.last)+'</td><td>'+esc(c.parties||'')+'</td><td>'+typePicker(c)+'</td><td class="max-w-md">'+contextHtml(c,150)+'</td>';
+  return '<tr class="hover'+(staged?' opacity-50':'')+'">'
+    +cells
+    +'<td>'+outstandingDecisionPicker(c)+'</td>'
+    +'<td><a class="link link-primary whitespace-nowrap" href="'+c.url+'" target="_blank">reply in CRM ↗</a></td></tr>';
 }
 
 /* ---------- Release follow-up: map shipped PRs to customers awaiting a reply ---------- */
@@ -979,18 +1038,27 @@ async function renderReleases(){
   const cards=[...grouped.entries()].sort((a,b)=>{const ap=a[1].reduce((n,item)=>n+(item.tickets||[]).filter(t=>t.status!=='responded').length,0),bp=b[1].reduce((n,item)=>n+(item.tickets||[]).filter(t=>t.status!=='responded').length,0);const ad=Math.max(...a[1].map(item=>new Date(item.releasedAt||item.createdAt||0).getTime()||0)),bd=Math.max(...b[1].map(item=>new Date(item.releasedAt||item.createdAt||0).getTime()||0));return Number(bp>0)-Number(ap>0)||bd-ad||a[0].localeCompare(b[0]);}).map(([name,items])=>releaseFollowupGroup(name,items)).join('');
   v.innerHTML=\`<div class="flex items-end justify-between gap-3 flex-wrap mb-4"><div><h1 class="text-2xl font-bold">Release follow-up</h1><p class="text-sm opacity-60">Group shipped pull requests by release, map them to tickets, and track which customers still need a reply.</p></div><div class="stats bg-base-100 shadow-sm"><div class="stat py-2 px-4"><div class="stat-title text-xs">Releases</div><div class="stat-value text-xl">\${releaseCount}</div></div><div class="stat py-2 px-4"><div class="stat-title text-xs">PRs</div><div class="stat-value text-xl">\${RELEASE_FOLLOWUPS.length}</div></div><div class="stat py-2 px-4"><div class="stat-title text-xs">Need response</div><div class="stat-value text-xl text-warning">\${pending}</div></div></div></div>
     <div class="card bg-base-100 shadow-sm mb-5"><div class="card-body p-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-bold text-lg">\${editing?'Edit PR #'+esc(editing.prNumber):'Map a released PR'}</h2>\${editing?'<button class="btn btn-sm btn-ghost ml-auto" onclick="EDIT_RELEASE=null;renderReleases()">Cancel</button>':''}</div>
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"><label class="form-control md:col-span-2"><span class="label-text">Release name or version</span><input id="releaseName" class="input input-bordered" list="releaseNameOptions" placeholder="2026.07 or Winter release" value="\${esc(editing?(editing.releaseName||'Uncategorised'):'')}"><datalist id="releaseNameOptions">\${releaseNames.map(name=>\`<option value="\${esc(name)}"></option>\`).join('')}</datalist></label><label class="form-control"><span class="label-text">PR number</span><input id="releasePrNumber" class="input input-bordered" placeholder="1223" value="\${esc(editing?.prNumber||'')}"></label><label class="form-control"><span class="label-text">Release date</span><input id="releaseDate" type="date" class="input input-bordered" value="\${esc(editing?.releasedAt||new Date().toISOString().slice(0,10))}"></label><label class="form-control md:col-span-2"><span class="label-text">PR title</span><input id="releasePrTitle" class="input input-bordered" placeholder="What shipped?" value="\${esc(editing?.prTitle||'')}"></label><label class="form-control md:col-span-2"><span class="label-text">PR link <span class="opacity-50">(optional)</span></span><input id="releasePrUrl" class="input input-bordered" placeholder="https://github.com/…/pull/1223" value="\${esc(editing?.prUrl||'')}"></label><label class="form-control md:col-span-2 xl:col-span-4"><span class="label-text">Release note <span class="opacity-50">(optional)</span></span><input id="releaseNotes" class="input input-bordered" placeholder="Anything support should mention" value="\${esc(editing?.notes||'')}"></label></div>
+      <div class="flex justify-end mb-2"><button class="btn btn-sm" type="button" onclick="pasteWebsiteRelease()">Paste website release</button></div><div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"><label class="form-control md:col-span-2"><span class="label-text">Release number</span><input id="releaseName" class="input input-bordered" list="releaseNameOptions" placeholder="1.2026.6.2" value="\${esc(editing?(editing.releaseName||'Uncategorised'):'')}"><datalist id="releaseNameOptions">\${releaseNames.map(name=>\`<option value="\${esc(name)}"></option>\`).join('')}</datalist></label><label class="form-control"><span class="label-text">Build / commit</span><input id="releaseBuild" class="input input-bordered" placeholder="0a54e80b" value="\${esc(editing?.releaseBuild||'')}"></label><label class="form-control"><span class="label-text">Release date</span><input id="releaseDate" type="date" class="input input-bordered" value="\${esc(editing?.releasedAt||new Date().toISOString().slice(0,10))}"></label><label class="form-control"><span class="label-text">PR number</span><input id="releasePrNumber" class="input input-bordered" placeholder="1223" value="\${esc(editing?.prNumber||'')}"></label><label class="form-control md:col-span-1 xl:col-span-3"><span class="label-text">PR title</span><input id="releasePrTitle" class="input input-bordered" placeholder="What shipped?" value="\${esc(editing?.prTitle||'')}"></label><label class="form-control md:col-span-2"><span class="label-text">PR link <span class="opacity-50">(optional)</span></span><input id="releasePrUrl" class="input input-bordered" placeholder="https://github.com/…/pull/1223" value="\${esc(editing?.prUrl||'')}"></label><label class="form-control md:col-span-2"><span class="label-text">Release note <span class="opacity-50">(optional)</span></span><input id="releaseNotes" class="input input-bordered" placeholder="Anything support should mention" value="\${esc(editing?.notes||'')}"></label></div>
       <div class="mt-4"><div class="flex items-center gap-2 mb-2"><span class="font-semibold">Open tickets needing a response</span><span class="text-xs opacity-55">Tickets assigned to another PR are hidden.</span><input class="input input-sm input-bordered ml-auto w-72" placeholder="Find ticket or customer…" oninput="filterReleaseTickets(this.value)"></div><div class="border border-base-300 rounded-lg max-h-72 overflow-y-auto">\${ticketRows||'<div class="p-4 opacity-60">No unassigned open tickets available.</div>'}</div></div>
       <div class="card-actions justify-end mt-4"><button class="btn btn-success" onclick="saveReleaseFollowup('\${editing?.id||''}')">\${editing?'Update mapping':'Save PR mapping'}</button></div><div id="releaseFormStatus" class="text-sm"></div></div></div>
     <div><h2 class="font-bold text-lg mb-2">Releases and customer replies</h2>\${cards||'<div class="card bg-base-100"><div class="card-body opacity-60">No PRs mapped yet.</div></div>'}</div>\`;
 }
 function filterReleaseTickets(value){const q=String(value||'').toLowerCase();document.querySelectorAll('.release-ticket-row').forEach(row=>row.classList.toggle('hidden',q&&!row.dataset.search.includes(q)));document.querySelectorAll('.release-ticket-section').forEach(section=>{let next=section.nextElementSibling,visible=false;while(next&&next.classList.contains('release-ticket-row')){if(!next.classList.contains('hidden'))visible=true;next=next.nextElementSibling;}section.classList.toggle('hidden',!visible);});}
+function parseWebsiteRelease(text){
+  const match=String(text||'').trim().match(/^Release:\\s*(.+?)\\s*-\\s*(\\d{1,2})\\s+([A-Za-z]{3})\\s+(\\d{4})\\s*-\\s*([A-Za-z0-9]+)\\s*$/i);if(!match)return false;
+  const months={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'},month=months[match[3].toLowerCase()];if(!month)return false;
+  document.getElementById('releaseName').value=match[1].trim();document.getElementById('releaseDate').value=match[4]+'-'+month+'-'+match[2].padStart(2,'0');document.getElementById('releaseBuild').value=match[5];return true;
+}
+async function pasteWebsiteRelease(){
+  let value='';try{value=await navigator.clipboard.readText();}catch{}if(!value)value=prompt('Paste the website footer release text:')||'';
+  if(!parseWebsiteRelease(value))alert('That does not look like a website release. Expected: Release: 1.2026.6.2 - 22 Jul 2026 - 0a54e80b');
+}
 function releaseFollowupGroup(name,items){
   const closed=items.every(item=>item.closedAt),pending=items.reduce((sum,item)=>sum+(item.closedAt?0:(item.tickets||[]).filter(ticket=>ticket.status!=='responded').length),0),ticketCount=new Set(items.flatMap(item=>(item.tickets||[]).map(ticket=>ticket.ticketId))).size;
-  const dates=items.map(item=>item.releasedAt).filter(Boolean).sort();const dateText=dates.length===0?'Release date unknown':dates[0]===dates[dates.length-1]?'Released '+dates[0]:'Released '+dates[0]+' to '+dates[dates.length-1];
+  const dates=items.map(item=>item.releasedAt).filter(Boolean).sort(),builds=[...new Set(items.map(item=>item.releaseBuild).filter(Boolean))];const dateText=dates.length===0?'Release date unknown':dates[0]===dates[dates.length-1]?'Released '+dates[0]:'Released '+dates[0]+' to '+dates[dates.length-1];
   const ordered=items.slice().sort((a,b)=>{const ap=(a.tickets||[]).some(t=>t.status!=='responded'),bp=(b.tickets||[]).some(t=>t.status!=='responded');return Number(bp)-Number(ap)||String(a.prNumber).localeCompare(String(b.prNumber),undefined,{numeric:true});});
   const nameArg=esc(JSON.stringify(name));
-  return \`<section class="card bg-base-100 shadow-sm mb-5 \${closed?'opacity-65':''}"><div class="card-body p-0"><div class="p-4 flex items-center gap-3 flex-wrap border-b border-base-300"><div><h3 class="font-bold text-xl">\${esc(name)}</h3><div class="text-xs opacity-60">\${items.length} PR\${items.length===1?'':'s'} · \${ticketCount} ticket\${ticketCount===1?'':'s'} · \${dateText}</div></div><div class="ml-auto badge \${closed?'badge-neutral':pending?'badge-warning':'badge-success'} badge-lg">\${closed?'Release closed':pending?pending+' response'+(pending===1?'':'s')+' remaining':'All customers responded'}</div>\${closed?'':\`<button class="btn btn-sm btn-neutral" onclick="closeRelease(\${nameArg},\${ticketCount})">Close release</button>\`}</div><div class="p-3 bg-base-200/50">\${ordered.map(item=>releaseFollowupCard(item)).join('')}</div></div></section>\`;
+  return \`<section class="card bg-base-100 shadow-sm mb-5 \${closed?'opacity-65':''}"><div class="card-body p-0"><div class="p-4 flex items-center gap-3 flex-wrap border-b border-base-300"><div><h3 class="font-bold text-xl">\${esc(name)}</h3><div class="text-xs opacity-60">\${items.length} PR\${items.length===1?'':'s'} · \${ticketCount} ticket\${ticketCount===1?'':'s'} · \${dateText}\${builds.length?' · Build '+builds.map(esc).join(', '):''}</div></div><div class="ml-auto badge \${closed?'badge-neutral':pending?'badge-warning':'badge-success'} badge-lg">\${closed?'Release closed':pending?pending+' response'+(pending===1?'':'s')+' remaining':'All customers responded'}</div>\${closed?'':\`<button class="btn btn-sm btn-neutral" onclick="closeRelease(\${nameArg},\${ticketCount})">Close release</button>\`}</div><div class="p-3 bg-base-200/50">\${ordered.map(item=>releaseFollowupCard(item)).join('')}</div></div></section>\`;
 }
 function releaseFollowupCard(item){
   const pending=item.closedAt?0:(item.tickets||[]).filter(ticket=>ticket.status!=='responded').length;
@@ -1000,7 +1068,7 @@ function releaseFollowupCard(item){
 }
 async function saveReleaseFollowup(id){
   const ticketIds=[...document.querySelectorAll('.release-ticket:checked')].map(input=>input.value),status=document.getElementById('releaseFormStatus');
-  const followup={id:id||null,releaseName:document.getElementById('releaseName').value.trim(),prNumber:document.getElementById('releasePrNumber').value.trim(),prTitle:document.getElementById('releasePrTitle').value.trim(),prUrl:document.getElementById('releasePrUrl').value.trim(),releasedAt:document.getElementById('releaseDate').value,notes:document.getElementById('releaseNotes').value.trim(),ticketIds};
+  const followup={id:id||null,releaseName:document.getElementById('releaseName').value.trim(),releaseBuild:document.getElementById('releaseBuild').value.trim(),prNumber:document.getElementById('releasePrNumber').value.trim(),prTitle:document.getElementById('releasePrTitle').value.trim(),prUrl:document.getElementById('releasePrUrl').value.trim(),releasedAt:document.getElementById('releaseDate').value,notes:document.getElementById('releaseNotes').value.trim(),ticketIds};
   status.textContent='Saving…';const result=await (await fetch('/api/release-followups/save',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({followup,by:auditActor()})})).json();if(!result.ok){status.textContent=result.error||'Could not save this PR mapping.';return;}RELEASE_FOLLOWUPS=null;EDIT_RELEASE=null;renderReleases();
 }
 function startEditRelease(id){EDIT_RELEASE=RELEASE_FOLLOWUPS.find(item=>item.id===id)||null;renderReleases();scrollTo({top:0,behavior:'smooth'});}
@@ -1025,8 +1093,9 @@ async function renderProposals(){
   await ensureProposals();
   const ready=PROPOSALS.filter(p=>['ready','declined','approved','completed'].includes(p.status)).length;
   const used=new Set(PROPOSALS.flatMap(p=>p.sourceChatIds||[]));
-  const candidates=DATA.chats.filter(c=>ticketType(c)==='feature'&&!used.has(c.id));
-  const drafts=PROPOSALS.filter(p=>['draft','changes_requested','planned'].includes(p.status));
+  const eligibleFeatureIds=new Set(DATA.chats.filter(c=>c.status==='open'&&REVIEW.decisions[c.id]==='keep'&&ticketType(c)==='feature').map(c=>c.id));
+  const candidates=DATA.chats.filter(c=>eligibleFeatureIds.has(c.id)&&!used.has(c.id));
+  const drafts=PROPOSALS.filter(p=>['draft','changes_requested','planned'].includes(p.status)&&(p.sourceChatIds||[]).some(id=>eligibleFeatureIds.has(id)));
   if(PROPVIEW==='repository')PROPVIEW='candidates';
   const v=document.getElementById('view');
   v.innerHTML=\`<div class="flex items-start justify-between gap-3 flex-wrap mb-4"><div><h1 class="text-2xl font-bold">Feature proposals</h1><p class="text-sm opacity-60">Choose feature requests to prepare, then send finished proposals to Boss review.</p></div><div class="join bg-base-100 rounded-lg">\${proposalTab('candidates','Feature requests',candidates.length+drafts.length)}\${proposalTab('review','Boss review',ready)}</div></div><div id="proposalBody"></div>\`;
@@ -1241,8 +1310,9 @@ function renderInbox(){
   const v=document.getElementById('view');
   const types=['bug','feature','not sure'];
   const selected=Array.isArray(window._fts)?window._fts:(window._ft&&window._ft!=='all type'?[window._ft]:types);
+  window._inboxOrder=new Map(DATA.chats.slice().sort((a,b)=>new Date(b.activityLast||b.last||0)-new Date(a.activityLast||a.last||0)).map((chat,index)=>[chat.id,index]));
   v.innerHTML=\`<div class="flex gap-2 mb-3 flex-wrap items-center">
-    <input id="q" class="input input-bordered input-sm" placeholder="search…" oninput="inboxRows()" value="\${esc(window._q||'')}">
+    <input id="q" class="input input-bordered input-sm" placeholder="search tickets and conversations…" oninput="inboxRows()" value="\${esc(window._q||'')}">
     <div class="flex gap-1.5 flex-wrap" aria-label="Filter by type">\${types.map(type=>\`<label class="flex items-center gap-1.5 border border-base-300 rounded-lg px-2 py-1 bg-base-100 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div>
     <select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select>
     <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input id="iu" type="checkbox" class="checkbox checkbox-xs" \${window._iu?'checked':''} onchange="inboxRows()"> Include undecided</label>
@@ -1258,17 +1328,17 @@ function inboxRows(){
     const decision=REVIEW.decisions[c.id];
     if(!window._iu&&c.status==='open'&&!['close','keep'].includes(decision))return false;
     if(window._fts.length<3&&!window._fts.includes(ticketType(c)))return false;
-    if(window._q){const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.headline||'')+' '+(c.ai?.summary||'')).toLowerCase();if(!hay.includes(window._q))return false;}
+    if(window._q){const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.headline||'')+' '+(c.ai?.summary||'')+' '+(c.conversationSearch||'')).toLowerCase();if(!hay.includes(window._q))return false;}
     return true;
-  }).sort((a,b)=>new Date(b.activityLast||b.last||0)-new Date(a.activityLast||a.last||0));
+  }).sort((a,b)=>(window._inboxOrder?.get(a.id)??Number.MAX_SAFE_INTEGER)-(window._inboxOrder?.get(b.id)??Number.MAX_SAFE_INTEGER));
   document.getElementById('rowcount').textContent=rows.length+(window._iu?' tickets':' managed tickets');
   const stColor=s=>s==='open'?'text-success font-semibold':s==='deleted'?'text-error':'opacity-50';
   const manageCell=c=>c.status==='open'?decisionPicker(c):c.status==='closed'?\`<button class="btn btn-xs btn-success \${DATA.crmAvailable?'':'opacity-60'}" onclick="reopenTicket('\${c.id}')" title="\${DATA.crmAvailable?'Reopen this ticket in the CRM':esc(DATA.crmReason||'CRM access unavailable')}">Reopen</button>\`:'—';
-  document.getElementById('tbl').innerHTML=\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
+   document.getElementById('tbl').innerHTML=\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
     <thead><tr><th>Ticket</th><th>Last activity</th><th>From</th><th>Headline</th><th>Type</th><th>Manage</th><th>Status</th><th>Context</th><th>CRM</th></tr></thead><tbody>
-    \${rows.map(c=>\`<tr class="hover"><td class="font-mono text-xs whitespace-nowrap">\${esc(c.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(c.activityLast||c.last)}</div>\${c.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(c.parties||'')}</td>
+    \${rows.map(c=>\`<tr class="hover \${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'bg-base-200 opacity-60':''}" title="\${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'Pending close — remains here until the CRM confirms closure':''}"><td class="font-mono text-xs whitespace-nowrap">\${esc(c.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(c.activityLast||c.last)}</div>\${c.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(c.parties||'')}</td>
         <td>\${esc(c.ai&&!c.ai.unavailable?c.ai.headline:(c.title||''))}</td><td>\${typePicker(c)}</td><td>\${manageCell(c)}</td>
-        <td class="\${stColor(c.status)}">\${c.status}</td><td class="max-w-md">\${contextHtml(c,240)}</td>
+        <td><div class="flex flex-col items-start gap-1"><span class="\${stColor(c.status)}">\${c.status}</span>\${c.leftOnRead?'<span class="badge badge-sm badge-warning" title="Left on read">📭</span>':''}</div></td><td class="max-w-md">\${contextHtml(c,240)}</td>
         <td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">\${c.status==='closed'?'view CRM ↗':'reply in CRM ↗'}</a></td></tr>\`).join('')}
     </tbody></table></div>\`;
 }
@@ -1288,7 +1358,7 @@ function footerBar(){
         <li><button onclick="copyCloseDetails()"><span>⌘</span><span><b>Copy close details</b><small class="block text-slate-600 font-normal">IDs and CLI command · \${nClose} selected</small></span></button></li>
       </ul>
     </div>
-    <button class="btn btn-sm bg-white text-slate-900 border-white hover:bg-slate-200 hover:border-slate-200 disabled:bg-white/20 disabled:text-white/70 disabled:border-white/30 disabled:opacity-100" onclick="undoAllCloseMarks()" \${nClose?'':'disabled'}>Undo close marks (\${nClose})</button>
+    <button class="btn btn-sm bg-white text-slate-900 border-white hover:bg-slate-200 hover:border-slate-200 disabled:bg-white/20 disabled:text-white/70 disabled:border-white/30 disabled:opacity-100" onclick="openUndoCloseMarks()" \${nClose?'':'disabled'}>Undo close marks (\${nClose})</button>
     <button class="btn btn-sm btn-success" onclick="closeDecided()">Close \${nClose} in CRM</button>
     <span class="text-sm opacity-70" id="fmsg"></span>\`;
 }
@@ -1297,10 +1367,15 @@ function copyCloseDetails(){
   const ids=decidedCloseIds(); if(!ids.length)return alert('No chats marked Close.');
   const joined=ids.join(','); copyText('Close IDs ('+ids.length+'):\\n'+joined+'\\n\\nCommand:\\nnode close-chats.mjs --ids '+joined+' --apply','copied close details');
 }
-async function undoAllCloseMarks(){
-  const ids=decidedCloseIds();if(!ids.length)return;
-  if(!confirm('Undo all '+ids.length+' Close marks? No CRM tickets will be changed.'))return;
-  await Promise.all(ids.map(id=>persistDecision(id,'keep')));render();
+function openUndoCloseMarks(){
+  const tickets=DATA.chats.filter(chat=>chat.status==='open'&&REVIEW.decisions[chat.id]==='close');if(!tickets.length)return;
+  document.getElementById('undoCloseAll').checked=false;document.getElementById('undoCloseList').innerHTML=\`<table class="table table-sm table-pin-rows bg-base-100"><thead><tr><th>Select</th><th>Ticket</th><th>Last activity</th><th>From</th><th>Headline</th><th>Type</th><th>Manage</th><th>Status</th><th>Context</th><th>CRM</th></tr></thead><tbody>\${tickets.map(chat=>\`<tr class="hover"><td><input type="checkbox" class="checkbox checkbox-sm undo-close-ticket" value="\${chat.id}" onchange="updateUndoCloseCount()" aria-label="Select \${esc(chat.code||'ticket')}"></td><td class="font-mono text-xs whitespace-nowrap">\${esc(chat.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(chat.activityLast||chat.last)}</div>\${chat.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(chat.parties||'')}</td><td>\${esc(chat.ai&&!chat.ai.unavailable?chat.ai.headline:(chat.title||''))}</td><td>\${typePicker(chat)}</td><td><span class="badge badge-error">Close</span></td><td class="text-success font-semibold">\${esc(chat.status)}</td><td class="max-w-md">\${contextHtml(chat,240)}</td><td><a class="link link-primary whitespace-nowrap" href="\${chat.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')}</tbody></table>\`;updateUndoCloseCount();document.getElementById('undoCloseModal').showModal();
+}
+function toggleUndoCloseSelection(checked){document.querySelectorAll('.undo-close-ticket').forEach(input=>input.checked=checked);updateUndoCloseCount();}
+function updateUndoCloseCount(){const inputs=[...document.querySelectorAll('.undo-close-ticket')],selected=inputs.filter(input=>input.checked).length;document.getElementById('undoCloseCount').textContent=selected+' selected';const all=document.getElementById('undoCloseAll');all.checked=inputs.length>0&&selected===inputs.length;all.indeterminate=selected>0&&selected<inputs.length;}
+async function undoSelectedCloseMarks(){
+  const ids=[...document.querySelectorAll('.undo-close-ticket:checked')].map(input=>input.value);if(!ids.length)return alert('Select at least one ticket to undo.');
+  await Promise.all(ids.map(id=>persistDecision(id,'keep')));document.getElementById('undoCloseModal').close();render();const message=document.getElementById('fmsg');if(message)message.textContent='undid '+ids.length+' Close mark'+(ids.length===1?'':'s');
 }
 async function closeDecided(){
   const ids=decidedCloseIds(); if(!ids.length)return alert('No chats marked Close.');
@@ -1345,5 +1420,5 @@ async function exportExcel(){
 }
 function hideLog(){ document.getElementById('logpanel').classList.add('hidden'); }
 load();
-setInterval(()=>refreshTokenStatus(),60000);
+setInterval(()=>refreshTokenStatus(),5*60*1000);
 </script></body></html>`;

@@ -2,8 +2,7 @@
 //
 //   1. PUSH:  rows you marked "close" in the sheet's "My action" column are
 //             closed in the CRM.
-//   2. PULL:  one paged list request for open chats; chats that disappeared are
-//             looked up by ID (closed remotely vs deleted). Full message history
+//   2. PULL:  one paged list request for all open and closed chats. Full message history
 //             is re-fetched ONLY for new chats or chats whose latest message
 //             changed.
 //   3. MERGE: data/inbox.json is updated in place. Closed chats stay in the file
@@ -71,7 +70,7 @@ if (toClose.length > 0) {
 // ---------- 2. PULL: cheap delta detection ----------
 
 console.error("");
-const freshOpen = await getAllChats({ includeClosed: false });
+const freshOpen = await getAllChats({ includeClosed: true });
 const freshById = new Map(freshOpen.map((c) => [c.id, c]));
 
 // Chats we know locally that are no longer in the open list: closed remotely,
@@ -123,7 +122,7 @@ const mergedChats = candidates.map((c) => {
         return mapChat(c, messages);
     }
     // metadata may still have moved (title, assignment, closedDate) — refresh it, keep messages
-    return { ...mapChat(c, []), isEmailThread: local.isEmailThread, messages: local.messages };
+    return { ...mapChat(c, local.messages ?? []), messages: local.messages };
 });
 
 // Deleted chats stay visible in the sheet, flagged.

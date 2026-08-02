@@ -169,15 +169,18 @@ A local dashboard over the same data files. Five main tabs:
   **Bug / Feature / Not sure** filters and set Keep or Close. Leaving a ticket untouched is the
   default “deal with later” behaviour; there is no separate Skip action.
 - **Inbox** — the full ticket-management workspace with Keep / Close controls, type changes,
-  conversations, CRM reply links, and reopening. Clicking a selected Keep again clears the
-  decision and returns that ticket to Outstanding. Open tickets appear after a Keep or Close decision;
+  conversations, CRM reply links, and reopening. Choose the opposite status to change an existing
+  Keep or Close decision. Open tickets appear after a Keep or Close decision;
   **Include undecided** temporarily restores the complete raw view. Closed tickets remain available
-  through the status filter and can be reopened directly in the CRM after confirmation. Ticket type can be set manually to **Bug**, **Feature**, or **Not sure**
+  through the status filter because Sync retains the full open-and-closed history, and can be reopened
+  directly in the CRM after confirmation. Ticket type can be set manually to **Bug**, **Feature**, or **Not sure**
   from Inbox, Outstanding, or the conversation modal.
 - **Release follow-up** — group shipped PRs under a release name or version, map each PR to one or
   more open CRM tickets, see which customers still need a release response, reply in the CRM, and
   mark each response completed. Closing a release closes all of its mapped CRM tickets and records
-  the individual ticket actions. Mappings and response changes are included in the audit history.
+  the individual ticket actions. Copying footer text such as `Release: 1.2026.6.2 - 22 Jul 2026 - 0a54e80b`
+  lets the app fill the release number, date, and build automatically. Mappings and response changes
+  are included in the audit history.
 - **Proposals** — select unassigned **Feature requests**, create an editable AI-assisted or manual
   proposal, and send it for boss sign-off. Boss review has separate actions to send a proposal back
   to Draft, decline it while keeping it visible, or close its source CRM ticket. Approval keeps

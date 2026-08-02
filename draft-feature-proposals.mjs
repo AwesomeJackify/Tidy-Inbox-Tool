@@ -27,7 +27,12 @@ const actionStore = fs.existsSync(ACTIONS) ? JSON.parse(fs.readFileSync(ACTIONS,
 const proposals = Array.isArray(store.proposals) ? store.proposals : [];
 const aiById = new Map((enriched.chats || []).map((chat) => [chat.id, chat.ai || {}]));
 const used = new Set(proposals.flatMap((proposal) => proposal.sourceChatIds || []));
-const features = inbox.chats.filter((chat) => (manual[chat.id] || aiById.get(chat.id)?.classification) === "feature" && !used.has(chat.id));
+const features = inbox.chats.filter((chat) =>
+    !chat.closedDate
+    && actionStore.decisions?.[chat.id] === "keep"
+    && (manual[chat.id] || aiById.get(chat.id)?.classification) === "feature"
+    && !used.has(chat.id)
+);
 
 function planningStart() {
     const date = new Date();
@@ -55,7 +60,7 @@ function source(chat) {
 
 function batchPrompt(chats) {
     const earliest = planningStart();
-    return `Draft exactly one management proposal for each source ticket below. Do not combine tickets. Return ONLY a JSON object with a "proposals" array containing exactly one object per source. Every object must preserve its exact sourceChatId and contain: sourceChatId, title, eli5Summary, customerPerspective, executiveSummary, problem, impact, scope, risks, questions, priority, estimatedDevEffort, estimatedStartDate, estimatedCompletionDate, estimateAssumptions, evidence. Evidence must be an array of short factual strings. Stay grounded in the ticket; do not invent names, revenue, customer sentiment, integrations, or requirements. eli5Summary must explain the request in 1–2 simple, jargon-free sentences. customerPerspective must explain the request from the customer's point of view in 1–3 sentences, naming a person and company only when explicitly supplied in the ticket; otherwise say "The customer at [company]". Scope must give a useful first version and explicit non-goals. Priority must be low, medium, or high with a brief reason. estimatedDevEffort must be a conservative developer-day range. Dates must be YYYY-MM-DD, start no earlier than ${earliest}, and represent an independent scenario where approval and one developer's capacity are available—not a promise or a portfolio schedule. estimateAssumptions must state that capacity assumption plus technical unknowns, testing, review, and dependencies that could move the dates.\n\nSources:\n${JSON.stringify(chats.map(source))}`;
+    return `Draft exactly one management proposal for each source ticket below. Do not combine tickets. Return ONLY a JSON object with a "proposals" array containing exactly one object per source. Every object must preserve its exact sourceChatId and contain: sourceChatId, title, eli5Summary, customerPerspective, executiveSummary, problem, impact, scope, risks, questions, priority, estimatedDevEffort, estimatedStartDate, estimatedCompletionDate, estimateAssumptions, evidence. Evidence must be an array of short factual strings. Stay grounded in the ticket; do not invent names, revenue, customer sentiment, integrations, or requirements. eli5Summary must explain the request in 1–2 simple, jargon-free sentences from the customer's perspective, using the customer's name and company when explicitly supplied. customerPerspective must explain the request from the customer's point of view in 1–3 sentences, naming a person and company only when explicitly supplied in the ticket; otherwise say "The customer at [company]". executiveSummary must be a detailed 3–5 sentence management statement covering the problem, proposed high-level delivery, expected benefit, and key boundary or uncertainty. Scope must begin with one high-level sentence describing what to deliver, followed by a useful first version and explicit non-goals. Priority must be low, medium, or high with a brief reason. estimatedDevEffort must be a conservative developer-day range for one developer. Dates must be YYYY-MM-DD, start no earlier than ${earliest}, and represent an independent scenario where approval and one developer's capacity are available—not a promise or a portfolio schedule. estimateAssumptions must state that capacity assumption plus technical unknowns, testing, review, and dependencies that could move the dates.\n\nSources:\n${JSON.stringify(chats.map(source))}`;
 }
 
 function clean(value, chatId, sourceName) {
@@ -113,7 +118,7 @@ async function mapLimit(items, limit, fn) {
 }
 
 if (!features.length) {
-    console.log("All Feature-labelled tickets already have proposals.");
+    console.log("All open, kept Feature-labelled tickets already have proposals.");
     process.exit(0);
 }
 

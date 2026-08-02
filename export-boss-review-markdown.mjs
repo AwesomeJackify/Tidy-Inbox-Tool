@@ -37,6 +37,31 @@ function sourceLines(proposal) {
     }).join("\n") || "- No source ticket found in the current sync.";
 }
 
+function oneLine(value, fallback = "Not provided") {
+    return text(value, fallback).replace(/\s+/g, " ").trim();
+}
+
+function deliveryLine(proposal) {
+    const scope = oneLine(proposal.scope, "");
+    if (!scope) return oneLine(proposal.executiveSummary);
+    const firstSentence = scope.match(/^.*?[.!?](?:\s|$)/)?.[0] || scope;
+    const result = firstSentence.replace(/^First version:\s*/i, "").trim();
+    return result ? result[0].toUpperCase() + result.slice(1) : result;
+}
+
+function conservativeDays(proposal) {
+    const values = oneLine(proposal.estimatedDevEffort, "").match(/\d+(?:\.\d+)?/g)?.map(Number).filter(Number.isFinite) || [];
+    return values.length ? Math.ceil(Math.max(...values)) : null;
+}
+
+function difficulty(days) {
+    if (days == null) return "Not estimated";
+    if (days <= 5) return "Low";
+    if (days <= 10) return "Moderate";
+    if (days <= 20) return "High";
+    return "Very high";
+}
+
 const lines = [
     "# Boss review",
     "",
@@ -48,7 +73,11 @@ const lines = [
 
 for (let index = 0; index < proposals.length; index++) {
     const proposal = proposals[index];
-    const considerations = [proposal.risks, proposal.questions, proposal.estimateAssumptions].map((value) => text(value, "")).filter(Boolean).join("\n\n");
+    const days = conservativeDays(proposal);
+    const executiveStatement = [proposal.executiveSummary, proposal.problem, proposal.impact]
+        .map((value) => text(value, ""))
+        .filter(Boolean)
+        .join("\n\n");
     lines.push(
         "",
         "---",
@@ -56,42 +85,28 @@ for (let index = 0; index < proposals.length; index++) {
         `## ${index + 1}. ${text(proposal.title, "Untitled proposal")}`,
         "",
         `Status: ${statusLabel[proposal.status] || text(proposal.status)}`,
-        `Priority: ${text(proposal.priority, "Not stated")}`,
         "",
-        "### Simple summary",
+        "### ELI5 — from the customer’s perspective",
         "",
-        text(proposal.eli5Summary),
+        text(proposal.customerPerspective, text(proposal.eli5Summary)),
         "",
-        "### Customer perspective",
+        "### What to deliver",
         "",
-        text(proposal.customerPerspective),
+        deliveryLine(proposal),
         "",
         "### Executive statement",
         "",
-        text(proposal.executiveSummary),
+        executiveStatement || "Not provided",
         "",
-        "### Why it matters",
+        "### Difficulty",
         "",
-        [text(proposal.problem, ""), text(proposal.impact, "")].filter(Boolean).join("\n\n") || "Not provided",
+        difficulty(days),
         "",
-        "### Recommended first scope",
+        "### Expected development time",
         "",
-        text(proposal.scope),
-        "",
-        "### Delivery estimate",
-        "",
-        `Effort: ${text(proposal.estimatedDevEffort, "Not estimated")}`,
-        `Indicative start: ${text(proposal.estimatedStartDate, "Not estimated")}`,
-        `Indicative completion: ${text(proposal.estimatedCompletionDate, "Not estimated")}`,
-        "Planning estimate only — not a delivery commitment.",
-        "",
-        "### Key considerations",
-        "",
-        considerations || "None recorded.",
-        "",
-        "### Customer evidence",
-        "",
-        (proposal.evidence || []).map((item) => `- ${text(item, "")}`).filter((item) => item !== "- ").join("\n") || "- None recorded.",
+        days == null
+            ? "Not estimated"
+            : `${days} developer-days for one developer. This uses the conservative upper end of the estimate and remains planning guidance, not a delivery commitment.`,
         "",
         "### Source tickets",
         "",

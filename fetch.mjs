@@ -2,8 +2,8 @@
 //
 // Usage:
 //   export TIDY_TOKEN='<TidyCore_AccessToken cookie value>'
-//   node fetch.mjs                 # open chats only (what /communication/inbox/all shows)
-//   node fetch.mjs --include-closed
+//   node fetch.mjs                 # all open and closed chats
+//   node fetch.mjs --open-only     # smaller open-ticket snapshot
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,7 +15,7 @@ import { backupFile } from "./lib/backup.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(here, "data", "inbox.json");
 
-const includeClosed = process.argv.includes("--include-closed");
+const includeClosed = !process.argv.includes("--open-only");
 
 requireToken();
 console.error(`API: ${API_BASE}  (includeClosed=${includeClosed})`);

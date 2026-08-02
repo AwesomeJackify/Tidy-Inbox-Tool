@@ -2,1464 +2,6 @@
   "updatedAt": "2026-07-20T05:42:57.006Z",
   "proposals": [
     {
-      "title": "Customer-Specific Fixed Euro Price List",
-      "executiveSummary": "Add a first version of customer-specific Euro pricing so an eligible customer can be quoted and invoiced using fixed EUR material prices instead of prices converted from GBP at the configured exchange rate.",
-      "problem": "TidyStock requires material pricing levels to use the business's GBP base currency and converts those prices into EUR. V-Zug UK therefore cannot maintain a fixed Euro price list for its Euro-denominated customer, causing the customer's EUR prices to vary when exchange rates change.",
-      "impact": "The sales team cannot use a stable, customer-specific EUR price list within TidyStock. Prices for this customer remain dependent on conversion from GBP, despite the customer being configured and invoiced in EUR.",
-      "scope": "First version: allow an authorised user to create and maintain one customer-specific material price list denominated in EUR; apply its fixed EUR prices when that customer is selected for a sale; retain existing GBP-based conversion when no applicable fixed EUR price exists; and clearly identify the applied pricing source during sales entry. Non-goals: supporting additional non-base currencies, redesigning general pricing levels, automating exchange-rate management, bulk price import, retrospective repricing, or changing accounting and invoicing behaviour beyond selecting the applicable fixed EUR price.",
-      "risks": "Existing pricing and currency logic may assume every pricing level is denominated in the base currency.,Fallback behaviour for materials missing from the fixed EUR list could produce unexpected mixed pricing if it is not made explicit.,Permissions, rounding, tax treatment, discounts, and downstream document behaviour require validation.,The ticket does not establish whether the need should be customer-specific or reusable across multiple customers.",
-      "questions": "Should fixed-currency price lists be restricted to EUR and one customer in the first version, or designed for reuse by other customers and currencies?,When a material has no fixed EUR price, should TidyStock convert its GBP price, block the sale, or require manual entry?,How should discounts or other pricing rules interact with the fixed EUR price?,Which sales documents and workflows must display or consume the fixed price list?,Who should be permitted to create, edit, and assign fixed-currency prices?",
-      "priority": "medium — the limitation blocks the requested fixed-price workflow, but the evidence identifies one customer and does not establish broader demand or operational severity.",
-      "estimatedDevEffort": "15-25 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-09-04",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from 2026-07-27; it is not a promise or portfolio schedule. The estimate includes technical discovery, implementation, automated and manual testing, code review, and release preparation. Dates could move based on unknowns in the existing base-currency pricing model, database changes, rounding and tax behaviour, sales-document coverage, regression findings, product decisions on fallback rules, and dependencies on reviewers, test environments, or release processes.",
-      "evidence": [
-        "The business's base currency is GBP.",
-        "The customer is configured and invoiced in EUR.",
-        "Current EUR prices are converted from GBP using a configured conversion rate.",
-        "The requester wants the customer's EUR prices to remain fixed rather than vary with exchange rates.",
-        "The requester wants a Euro price list that the sales team can use.",
-        "Support confirmed that pricing levels must currently adhere to the base currency.",
-        "Support identified direct EUR pricing levels as unsupported TidyStock functionality."
-      ],
-      "sourceChatIds": [
-        "f3332101-cbca-4fd2-a521-a5809ef9b516"
-      ],
-      "aiSource": "Codex",
-      "id": "14850487-e570-4e8b-9946-7721a732852e",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let a business set fixed prices in euros for a particular customer. Those prices will stay the same when the pound-to-euro exchange rate changes.",
-      "customerPerspective": "Caren Ingold from V-Zug UK Limited wants a fixed euro price list for one customer because its prices currently change when TidyStock converts them from pounds using the exchange rate."
-    },
-    {
-      "title": "Time-entry change audit log",
-      "executiveSummary": "After confirming the customer's audit requirements, implement a first-version audit report that records and exposes material changes to time entries, including who changed an entry, when it changed, and the relevant before-and-after values.",
-      "problem": "The customer requested an audit log of time-entry changes but has not specified which events, fields, users, retention period, or reporting workflow must be covered.",
-      "impact": "The absence of defined audit visibility may make it difficult to determine how a time entry changed and who made the change, but the actual operational requirement remains unconfirmed.",
-      "scope": "After confirming required events and fields, prospectively record material time-entry changes with the actor, timestamp, and before-and-after values, and expose them in an access-controlled in-product report. Historical reconstruction, export, and unspecified retention rules are not part of the first version.",
-      "risks": "The requested audit events and fields are still undefined.,Historical changes may not be reconstructable.,Capturing before-and-after values could affect storage, privacy, and performance.,Deletion and system-generated changes may require special handling.,Access controls and retention requirements could materially alter the design.",
-      "questions": "Which time-entry actions must be audited: creation, editing, deletion, approval, or all of these?,Which changed fields must be shown?,Who should be allowed to view the audit log?,Is export required, or is an in-product report sufficient?,How long must audit records be retained?,Are historical changes required, or is prospective capture acceptable?,Should system and integration changes be distinguished from user changes?",
-      "priority": "Low — the audit requirements remain undefined and the ticket is awaiting customer clarification",
-      "estimatedDevEffort": "15-25 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-28",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The estimate includes requirements confirmation, audit-data design, prospective event capture, report implementation, permission and retention testing, regression testing, code review, and deployment preparation. Dates could move based on the required event coverage, existing time-entry architecture, historical-data expectations, storage and performance findings, privacy or retention rules, authorization dependencies, customer response time, and other technical unknowns.",
-      "evidence": [
-        "The customer's request was “Audit log of time entry changes.”",
-        "No affected fields, events, users, retention period, or output format were specified.",
-        "Support requested more detail twice.",
-        "The ticket is awaiting the customer's response."
-      ],
-      "sourceChatIds": [
-        "a83af72d-926c-437c-b814-c19193e3a876"
-      ],
-      "aiSource": "Codex",
-      "id": "2164f736-9e34-4f5c-9287-8209d512b9f1",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Keep a record showing who changed a time entry, when they changed it, and what was different before and after.",
-      "customerPerspective": "Nathan Moss from QGE Group wants an audit log of changes to time entries. The specific changes and information that the log must cover have not yet been supplied."
-    },
-    {
-      "title": "Multi-customer product purchase-history report",
-      "executiveSummary": "Assess and deliver a focused extension of the SA02 Sales By Material report, adding filters for consistently stored style and size values and a defined method for selecting multiple customers. Implementation should begin only after Bene Footwear confirms it wants to proceed and documents how products and customer groups are identified.",
-      "problem": "The current reporting workflow does not provide the requested combination of style-and-size filtering, last-purchase visibility, and reporting across multiple selected or grouped customers. The available ticket does not establish consistent data conventions for these filters.",
-      "impact": "Staff must use a less direct process to answer product purchase-history questions and produce reporting across groups such as the Farmlands stores. The ticket does not quantify the time, cost, or frequency involved.",
-      "scope": "First version: customise the SA02 Sales By Material report to filter material items using existing, consistently populated style and size fields; allow reporting for a clearly defined selection or group of customers; and show sufficient sales history to identify the latest customer purchase matching the filters. Non-goals: cleaning or restructuring existing product and customer data, introducing new master-data fields, supporting arbitrary customer grouping without a shared identifier, changing unrelated reports, or adding functionality beyond the stated reporting use case.",
-      "risks": "Style and size may not be stored uniformly, customer records may lack a reliable grouping attribute, and the meaning of \"last purchased\" may require clarification. Bene Footwear has not yet confirmed that it wants to proceed, so scheduling work now could create rework or unused development.",
-      "questions": "Does Bene Footwear want to proceed? Which existing fields contain style and size, and are they populated consistently? How should the 80 Farmlands stores be identified as a group? Should users select customers individually, use a saved group, or filter by a shared field? Does \"last purchased\" mean the latest completed sale, and which date and transaction statuses should count? What columns and export formats are required?",
-      "priority": "Medium — the request could simplify recurring multi-store and product-history reporting, but customer confirmation and key data rules remain outstanding.",
-      "estimatedDevEffort": "Approximately 2–4 developer-weeks after requirements and data conventions are confirmed, including implementation, testing, and review.",
-      "estimatedStartDate": "2026-08-10",
-      "estimatedCompletionDate": "2026-09-04",
-      "estimateAssumptions": "Planning guidance only, not a commitment. Assumes Bene Footwear confirms the request by 2026-07-31; style, size, and customer-group identifiers already exist and are consistently populated; SA02 can be extended without major reporting-platform changes; the first version uses existing sales data and permissions; and customer review is available during testing. Data remediation, new master-data structures, or broader report redesign would require re-estimation.",
-      "evidence": [
-        "Kristen Dunn requested product lookup by specific style and size.",
-        "The requested lookup is intended to show when a product was last purchased by a customer.",
-        "Kristen Dunn requested reports covering more than one customer at a time.",
-        "Bene Footwear has 80 Farmlands stores cited as an example reporting group.",
-        "Aqeel identified SA02 Sales By Material as the base report.",
-        "Aqeel described the request as a possible customised version of SA02.",
-        "Aqeel requested clarification on consistent storage of style and size.",
-        "Aqeel stated that grouped-customer filtering requires a shared data attribute.",
-        "On 2026-03-29, Kristen Dunn said she still needed to discuss the request with her team."
-      ],
-      "sourceChatIds": [
-        "46ef7a67-b2bf-46d8-9bd5-31dac5a78d85"
-      ],
-      "aiSource": "Codex",
-      "id": "c653196d-22d3-4ae5-8aa9-82a6ff91d53c",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:42:57.006Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T03:17:50.692Z",
-          "by": "kevin",
-          "action": "decision",
-          "status": "draft",
-          "outcome": "draft",
-          "comment": ""
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "draft",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:40:16.544Z",
-          "by": "Codex draft",
-          "action": "status changed",
-          "status": "ready"
-        },
-        {
-          "at": "2026-07-20T05:42:57.006Z",
-          "by": "Codex",
-          "action": "AI redraft",
-          "status": "ready",
-          "comment": "Redrafted only this proposal; workflow status unchanged."
-        }
-      ],
-      "eli5Summary": "Enable staff to find when a product in a particular style and size was last bought and to report on several customers together. The first version would extend an existing sales report.",
-      "customerPerspective": "Kristen Dunn at Bene Footwear wants to look up the last customer purchase of a product by style and size and run combined reports for groups such as its 80 Farmlands stores."
-    },
-    {
-      "title": "Customer credit-terms review and controlled bulk update",
-      "executiveSummary": "Provide a focused customer-management workflow for identifying customers on 30-day terms and changing selected records to 30 days end-of-month, with safeguards and a reviewable result.",
-      "problem": "Customers cannot currently be sorted by credit terms or updated in bulk, forcing the requested credit-term correction to be identified and performed record by record.",
-      "impact": "The customer lacks an efficient way to find all affected customer records and apply the same intended credit-term change consistently.",
-      "scope": "Provide a review list of customers currently on 30-day terms and allow authorized users to select records for a controlled change to 30 days end-of-month. Include a preview and a reviewable result so the affected records are clear. General-purpose bulk editing of other customer fields or credit terms is not part of the first version.",
-      "risks": "A bulk update could change unintended customer records if filtering or selection is unclear.,The internal representation of 30 days and 30 days end-of-month requires verification.,Concurrent edits could make a preview stale before updates are applied.,The customer has not yet supplied the mock-up requested by support.,Permissions and auditability requirements have not been confirmed.",
-      "questions": "Should the first version include the update action, or only a report used to identify records?,Which customer fields should appear in the review list?,Should all matching customers be selectable at once?,Which user roles may perform the bulk change?,What audit or rollback information is required?,Can the customer provide the requested mock-up?",
-      "priority": "Medium — the requested correction is specific and currently manual, but workflow, permissions, and audit requirements remain unresolved",
-      "estimatedDevEffort": "15-25 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-28",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The estimate includes workflow and permission design, implementation, validation safeguards, automated and regression testing, review of update results, code review, and deployment preparation. Dates could move based on the customer mock-up, credit-term data representation, audit or rollback expectations, authorization dependencies, concurrency behavior, report-framework limitations, and other technical unknowns.",
-      "evidence": [
-        "The customer needs to identify customers set to 30-day credit terms.",
-        "The intended change is from 30 days to 30 days end-of-month.",
-        "Support confirmed that sorting by credit terms and bulk updating are not currently available.",
-        "Support offered to scope a custom report for a development fee.",
-        "Support requested a report mock-up and is awaiting the customer's response."
-      ],
-      "sourceChatIds": [
-        "65149ee7-ce17-488e-95ae-1feeffa2e14d"
-      ],
-      "aiSource": "Codex",
-      "id": "a801ad28-81f9-4a1b-a105-a3dd1310d6b3",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users find customers with the same payment terms and change selected customers together instead of one at a time.",
-      "customerPerspective": "Trudy Johnson from DCA Equipment Limited wants to identify every customer set to 30-day payment terms and change them to 30 days end-of-month. She currently cannot sort customers by their terms or update them in bulk."
-    },
-    {
-      "title": "Reusable customer report grouped by packing slip template",
-      "executiveSummary": "Create a reusable customer report that includes customer codes, names, packing slip templates, and all associated contacts and email addresses, with reliable separation or grouping by packing slip template for ad hoc mailout preparation.",
-      "problem": "The standard customer export cannot filter customers by packing slip template, and the one-off extract supplied to the customer did not include all required contact and email information.",
-      "impact": "The customer cannot readily produce current H2o and Pentic customer lists with the contact details needed for mailouts and customer-data review.",
-      "scope": "Create a reusable report containing customer code, customer name, packing slip template, and all associated contacts and email addresses, grouped by template where exact filtering is unreliable. Represent missing templates and contact details consistently and use an agreed row structure for customers with multiple contacts. Mailout delivery and correction of incomplete template assignments are not part of the first version.",
-      "risks": "Support has indicated that exact filtering by sales template may not be fully accurate.,Multiple contacts and email addresses may require repeated rows or another agreed output structure.,Incomplete or inconsistent template assignments could affect grouping.,Use of exported contact information remains subject to the customer's own data-handling obligations.",
-      "questions": "Should each contact occupy a separate row, or should multiple contacts be combined within a customer row?,Does “all email addresses” include every contact record associated with the customer?,Must users select one template before running the report, or is a grouped report acceptable?,How should customers with no template or no email address be represented?,Is “sales template” in the prior response the same field as the requested packing slip template?",
-      "priority": "Medium — the customer needs a repeatable report, but contact layout and reliable template filtering still require confirmation",
-      "estimatedDevEffort": "10-18 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-21",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The estimate includes data-model investigation, report design, implementation, testing with multiple contacts and template states, customer-facing review, code review, and deployment preparation. Dates could move if packing slip template relationships cannot be filtered accurately, report infrastructure has limitations, output-field definitions change, representative data is unavailable, or customer approval and other dependencies are delayed.",
-      "evidence": [
-        "The standard Customer Export does not provide a packing slip template filter.",
-        "The customer needs to run the report ad hoc throughout the year.",
-        "The report is intended to support large mailouts and customer-information review.",
-        "Requested fields include customer code, customer name, packing slip template, all contacts, and all email addresses.",
-        "Support said a custom report was required and that a quote would be provided.",
-        "Support warned that exact template filtering might not be fully accurate but grouping may be possible."
-      ],
-      "sourceChatIds": [
-        "d23fd3d1-8af1-4d9e-abb2-96e477abb77a"
-      ],
-      "aiSource": "Codex",
-      "id": "b762f6c9-6757-46e5-9ae0-fa5907cfe197",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Create a report that groups customers by the packing slip they use and includes all their contacts and email addresses. The report can be run again whenever needed.",
-      "customerPerspective": "Kate Brown from Pendred Innovations Ltd wants to separately view customers using the H2o and Pentic packing slips, including all contacts and email addresses. She needs to run this information throughout the year for mailouts and customer-data updates, but the standard export does not show the packing slip category."
-    },
-    {
-      "title": "Expose assembly child-item breakdown through the API",
-      "executiveSummary": "Add a read-only API capability that returns the child-item breakdown for an assembly, allowing API consumers to retrieve both assembly records and their component structure.",
-      "problem": "The existing material-items API can return items filtered to assemblies, but the customer cannot retrieve the child items within an assembly.",
-      "impact": "API consumers cannot obtain a complete assembly structure through the currently described API workflow and must seek another way to access component details.",
-      "scope": "Add a read-only API response or route that returns an assembly's direct child items using a confirmed minimal set of component fields and existing authorization behavior. Preserve compatibility with the current material-items API. Recursive expansion of nested assemblies and unrelated assembly-management operations are not part of the first version.",
-      "risks": "The assembly relationship may not currently be exposed cleanly by the API data model.,Nested assemblies could introduce recursion, cycle, payload-size, or performance concerns.,The exact component fields required by the customer have not been confirmed.,API compatibility and authorization behavior require review.",
-      "questions": "Are direct children sufficient, or must nested assemblies be expanded recursively?,Which child-item fields are required in the response?,Should the breakdown be embedded in the existing material-item response or exposed through a separate route?,Are inactive or archived child items expected to appear?",
-      "priority": "Medium — the missing child-item data blocks a complete API assembly view, but response fields and nesting behavior are not yet defined",
-      "estimatedDevEffort": "8-15 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-14",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The estimate includes API design, implementation, automated testing, regression testing, documentation, and code review. Dates could move after investigation of the assembly data model, nested-assembly behavior, authorization rules, API versioning, performance, deployment dependencies, or clarification of required response fields.",
-      "evidence": [
-        "The customer successfully received instructions for filtering material items to assemblies.",
-        "The customer then asked how to retrieve an assembly's child-item breakdown.",
-        "The ticket summary states that this breakdown is not currently available through the API.",
-        "No required response fields or nesting behavior were specified."
-      ],
-      "sourceChatIds": [
-        "7101d5d5-b533-4db5-b878-280a24116962"
-      ],
-      "aiSource": "Codex",
-      "id": "3093be6a-b385-4419-a53b-3c490bb3a54b",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let connected software see both an assembled item and the smaller items inside it.",
-      "customerPerspective": "Bryan Holyoake from Armatec Environments Ltd can retrieve assemblies through the API but cannot retrieve the child items that make up each assembly."
-    },
-    {
-      "title": "Discovery and prototype for AI-assisted data entry",
-      "executiveSummary": "Run a focused discovery and technical prototype to define what “AI inputting” should mean for Rayham Engineering before committing to a production feature. The outcome would be a validated workflow, feasibility findings, and an implementation estimate.",
-      "problem": "The customer has expressed interest in AI-assisted input, but no target workflow, source data, expected output, or success criteria have been provided.",
-      "impact": "Without clarification, the request cannot be reliably scoped or prioritized, and development could address the wrong data-entry problem.",
-      "scope": "Run discovery to identify one concrete data-entry workflow, its source inputs, target fields, review steps, and measurable acceptance criteria, then test feasibility with representative examples in a limited prototype. Produce findings and an implementation estimate. A production AI feature or broad automation across unspecified workflows is not part of this version.",
-      "risks": "The customer may mean a substantially different workflow by “AI inputting.”,Accuracy and feasibility will depend on representative examples and clear validation rules.,Privacy or security constraints may limit which data can be evaluated.,Prototype findings may show that a production implementation requires substantially more work.",
-      "questions": "Which task or screen should AI-assisted input address?,What source information would be supplied, and in what format?,Which fields should be populated or suggested?,How should users review and correct results?,What examples and acceptance criteria can the customer provide?",
-      "priority": "Low — no target workflow, inputs, outputs, or success criteria have been supplied",
-      "estimatedDevEffort": "3-7 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-04",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The estimate covers discovery, a limited prototype, testing of representative samples, technical review, and documentation. Dates could move based on customer response time, sample-data availability, privacy constraints, AI service selection, data quality, and other technical unknowns or dependencies.",
-      "evidence": [
-        "Locky Barden asked when Tidy would implement “AI inputting.”",
-        "No workflow, input format, or desired output was described.",
-        "Kathy Chadwick asked the customer to explain the problem being solved.",
-        "The ticket is awaiting the customer's clarification."
-      ],
-      "sourceChatIds": [
-        "ff0033c2-ebca-435b-9178-a986179ac69c"
-      ],
-      "aiSource": "Codex",
-      "id": "6b9c7f45-1539-46ae-a9ad-8685c3c6862a",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Explore where AI could help enter information, then test a small example before building the full feature.",
-      "customerPerspective": "Locky from Rayham Engineering wants to know when Tidy will start using AI to enter information, but the specific data-entry task has not yet been explained."
-    },
-    {
-      "title": "Allow partial fulfilment with an explicit backorder quantity",
-      "executiveSummary": "Add an explicit fulfil-now quantity to the sales-order split workflow so users can backorder part of an ordered quantity even when more stock is available.",
-      "problem": "TidyStock currently uses all available stock and backorders the remainder, so a user cannot directly choose to fulfil only part of an available quantity. The documented workaround requires temporarily transferring stock to another location.",
-      "impact": "Would remove temporary stock transfers from this scenario and let users intentionally reserve available stock while creating the required backorder. Priority reason: the request addresses a functional limitation in order fulfilment and the current workaround adds several inventory operations.",
-      "scope": "First version: during the applicable sale-order split flow, allow an authorised user to enter a fulfil-now quantity between zero and the ordered quantity, create the child backorder for the remaining quantity, validate the choice against available stock, and record the resulting quantities consistently. Non-goals: automated allocation policies, customer prioritisation, reservation optimisation, changes to replenishment, bulk order reallocation, or redesign of the broader sales-order workflow.",
-      "risks": "The change affects stock allocation and child-order quantities.,Concurrent stock changes could invalidate the selected quantity.,Existing reservations or location rules may constrain fulfilment.,Zero-quantity and over-available selections require clear validation.,Incorrect handling could cause stock or order quantity discrepancies.",
-      "questions": "At which step should the fulfil-now quantity be entered?,Should zero immediate fulfilment be allowed?,Can users choose quantities separately by stock location?,How should existing reservations affect the maximum selectable quantity?,Are permissions or audit details required for an override?,Should the choice remain editable after the child order is created?",
-      "priority": "high",
-      "estimatedDevEffort": "10-17 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-21",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The range includes workflow and validation changes, stock and child-order integrity testing, concurrency and regression testing, review, and revisions. Reservation behavior, multi-location allocation, transaction boundaries, permissions, audit requirements, existing split-order logic, test data, and dependencies on inventory availability services could move the dates.",
-      "evidence": [
-        "Customer described fulfilling 6 units when 9 are available against an order for 10.",
-        "Customer also described fulfilling 6 units when 12 are available against an order for 10.",
-        "Peter confirmed TidyStock does not directly offer this override.",
-        "Current behavior backorders the remainder when stock is insufficient.",
-        "The suggested workaround temporarily transfers reserve stock to another location.",
-        "No customer confirmation that the workaround was sufficient is recorded."
-      ],
-      "sourceChatIds": [
-        "8d6475f0-4e5c-4641-8526-ffb615af28d7"
-      ],
-      "aiSource": "Codex",
-      "id": "fc274259-77de-4115-9bd6-9d5edb0dfe11",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users choose how many items to supply now and put the rest on backorder, even when enough stock is available.",
-      "customerPerspective": "Duane from Espresso Road Ltd wants to supply only part of an order and backorder the rest. He currently cannot choose a smaller quantity when more stock is available."
-    },
-    {
-      "title": "Allow configurable columns in the inventory overview",
-      "executiveSummary": "Add a limited column chooser to the TidyStock inventory overview, initially supporting removal of reference and display of supplier and stock reorder level.",
-      "problem": "The inventory overview cannot currently be adjusted to show the supplier and reorder level or hide the reference column, limiting the usefulness of the at-a-glance view.",
-      "impact": "Would let users place the specifically requested inventory information directly in the overview. Priority reason: the customer confirmed the feature request, although ST01 provides a partial reporting workaround for supplier information.",
-      "scope": "First version: provide a column chooser for the existing overview with support for showing or hiding reference, supplier, and stock reorder level; preserve the selection for the user where existing preference infrastructure permits; and test sorting and layout. Non-goals: arbitrary custom fields, calculated columns, report redesign, column-level permissions, saved shared layouts, or changes to inventory data.",
-      "risks": "An item may have more than one supplier, requiring a display rule.,Adding columns may reduce readability on smaller screens.,Preference persistence may require infrastructure not currently used by the overview.,Reorder-level data availability may vary by item or location.",
-      "questions": "Which supplier should be shown when an item has multiple suppliers?,Is reorder level item-wide or location-specific in this view?,Should column choices persist per user, per organisation, or only for the session?,Are reference, supplier, and reorder level the complete first-version column set?",
-      "priority": "medium",
-      "estimatedDevEffort": "7-12 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-14",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The range includes UI and preference work, implementation, responsive-layout and regression testing, review, and minor revisions. Supplier cardinality, reorder-level data scope, preference storage, table-component limitations, sorting behavior, test coverage, and dependencies on the inventory overview architecture could move the dates.",
-      "evidence": [
-        "Customer asked to remove the reference column.",
-        "Customer asked to add a supplier column.",
-        "Customer asked to show stock reorder level.",
-        "Terence confirmed the overview cannot currently be customized.",
-        "ST01 was offered as a current way to obtain supplier information.",
-        "Customer confirmed the request should be lodged as a feature request."
-      ],
-      "sourceChatIds": [
-        "3252e219-4270-4098-be4b-f78d43035dd5"
-      ],
-      "aiSource": "Codex",
-      "id": "69a5527f-4b1d-457e-942a-3fb265c7b458",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users choose which columns appear in the inventory overview. They could hide the reference and show the supplier and reorder level instead.",
-      "customerPerspective": "Katrina from BGR Equipment Hire Pty Ltd wants to change the inventory overview columns so she can quickly see suppliers and stock reorder levels without the reference column."
-    },
-    {
-      "title": "Report time cost against fixed fees across multiple projects",
-      "executiveSummary": "Provide a multi-project report comparing the cost of worked hours, calculated from rates and hours, with each project's fixed fee.",
-      "problem": "The existing PR06 report was suggested for individual projects, but the customer needs a rate-times-hours versus fixed-fee comparison for multiple projects in one report.",
-      "impact": "Would give the customer a consolidated comparison for multiple small fixed-price jobs without running an individual report for each project. Priority reason: the request supports recurring project-cost oversight and is not met by the suggested individual-project report.",
-      "scope": "First version: allow selection of multiple projects and report project identifier, fixed fee, worked hours, calculated time cost, and variance between fixed fee and time cost. Include consistent totals and an export if supported by the chosen report framework. Non-goals: forecasting future hours, changing billing or fixed-fee records, allocating non-time costs, adding profitability dashboards, or replacing PR06.",
-      "risks": "The applicable rate for each time entry is not defined in the ticket.,Historical versus current rate selection could materially change results.,Fixed-fee storage may vary by project or be absent.,Report performance may degrade across large project selections.,Tax and currency treatment are unspecified.",
-      "questions": "Which rate should be multiplied by worked hours?,Should the report use the rate recorded at the time of work or a current rate?,Should projects without a fixed fee or rate be included?,Is variance required as an amount, percentage, or both?,What project filters and date range are required?,Should tax be included or excluded?",
-      "priority": "high",
-      "estimatedDevEffort": "10-18 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-24",
-      "estimateAssumptions": "This is an independent scenario assuming approval, answers to the calculation questions, and one developer's capacity are available from the estimated start date. The range includes report design, data-query work, implementation, calculation and performance testing, review, and revisions. Rate history, fixed-fee data mapping, date filtering, tax and currency rules, dataset size, export behavior, regression coverage, and dependencies on the reporting framework could move the dates.",
-      "evidence": [
-        "Customer has many small fixed-price jobs.",
-        "Customer defined costs as time worked.",
-        "PR06 was suggested for an individual project.",
-        "Customer requested rates multiplied by hours worked versus fixed fee.",
-        "Customer requested multiple projects in one report."
-      ],
-      "sourceChatIds": [
-        "20a0cfe6-8f5a-4ee8-a3c7-99dd68646ad0"
-      ],
-      "aiSource": "Codex",
-      "id": "71b49910-8896-4ec6-98a2-e5353cfc3493",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Create one report that compares the cost of worked hours with the fixed fee for several projects.",
-      "customerPerspective": "David from North Group wants to compare hourly work costs with the fixed fee for each of their many small fixed-price jobs. The existing report only handles one project at a time."
-    },
-    {
-      "title": "Show a combined materials-and-freight total during PO receipt",
-      "executiveSummary": "Add a combined total to the purchase order receipt screen so users can see materials plus freight before completing receipt entry.",
-      "problem": "The PO receipt screen presents materials and freight costs separately, requiring the customer to calculate their combined total manually.",
-      "impact": "Removes a repeated manual calculation from the PO receipting workflow and makes the overall amount visible before entry. Priority reason: the request addresses a recurring operational inconvenience with a narrowly defined calculation.",
-      "scope": "First version: display a read-only combined total of the materials and freight amounts at the bottom of the PO receipt screen, update it when relevant values change, and test rounding and currency presentation. Non-goals: changing material or freight calculations, altering accounting postings, adding new freight allocation methods, or redesigning the receipting workflow.",
-      "risks": "The screen may contain tax-inclusive and tax-exclusive values requiring a clear basis.,Rounding could cause the displayed total to differ from downstream values.,Partial receipts or multiple freight entries may affect which amounts belong in the total.",
-      "questions": "Should the combined total be tax-inclusive or tax-exclusive?,Should it reflect the full purchase order or only the current receipt?,How should multiple freight charges and rounding be handled?,Is the total informational only?",
-      "priority": "medium",
-      "estimatedDevEffort": "3-6 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-05",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The range includes implementation, calculation and UI testing, review, and minor revisions. Tax treatment, partial-receipt behavior, rounding rules, screen state management, regression coverage, and dependencies on the PO receipting calculation model could move the dates.",
-      "evidence": [
-        "Customer said materials and freight are shown in separate columns.",
-        "Customer requested a combined total at the bottom of purchase order receive.",
-        "Customer said a calculator is currently needed each time.",
-        "Ticket opened on 2026-04-21."
-      ],
-      "sourceChatIds": [
-        "79c3a925-132f-430b-afc8-d126111e6055"
-      ],
-      "aiSource": "Codex",
-      "id": "fdc8b54e-6636-41c6-9deb-6e3682c47845",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Show one total for materials and freight on the purchase order receipt screen before the receipt is entered.",
-      "customerPerspective": "Rosalind from Rozcraft Limited wants the purchase order receipt screen to add materials and freight together. She currently has to calculate the combined total herself each time."
-    },
-    {
-      "title": "Add an estimated-cost measure to report D05Pe",
-      "executiveSummary": "Extend report D05Pe with a clearly defined estimated-cost value after confirming the underlying hours, rates, formula, and desired output position with the customer.",
-      "problem": "The customer wants estimated costs in D05Pe, but the ticket does not establish whether the estimate should use task-level estimated effort, planned hours, or another basis.",
-      "impact": "Would allow the requested estimate to be reviewed within D05Pe once its meaning is defined. Priority reason: the report enhancement may be useful, but implementation is blocked by unresolved calculation requirements.",
-      "scope": "First version: obtain and approve a mock-up and formula, identify the required source fields, add one estimated-cost column or measure to D05Pe, and test calculation and export behavior. Non-goals: introducing new estimating workflows, changing task or planning data, adding multiple alternative cost models, or modifying unrelated reports.",
-      "risks": "An incorrect interpretation of estimated cost could produce misleading report values.,Required rate or estimate data may be unavailable for some records.,The requested formula and display location remain undefined.,Report exports may require separate layout changes.",
-      "questions": "Should estimated cost be based on estimated effort, planned hours, or another quantity?,Which rate should be applied?,How should missing hours or rates be handled?,Where should the value appear in D05Pe?,Can the requested mock-up and formula be supplied?",
-      "priority": "medium",
-      "estimatedDevEffort": "5-10 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-12",
-      "estimateAssumptions": "This is an independent scenario assuming approval, the requested clarification and mock-up, and one developer's capacity are available from the estimated start date. The range includes analysis, implementation, calculation testing, report and export testing, review, and minor revisions. Formula definition, rate selection, source-data availability, report architecture, test fixtures, and dependencies on customer clarification could move the dates.",
-      "evidence": [
-        "Customer asked to add estimated costs to report D05Pe.",
-        "Peter identified estimated effort and planned hours as different possible meanings.",
-        "Peter requested an Excel mock-up showing the field location and formula.",
-        "The ticket is awaiting customer clarification."
-      ],
-      "sourceChatIds": [
-        "a2b1fb50-ae5d-420b-a035-12a1ace598f3"
-      ],
-      "aiSource": "Codex",
-      "id": "2851c1ca-f4cb-4828-9006-4857aff90b92",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Add estimated costs to the D05Pe report after confirming how those costs should be calculated and where they should appear.",
-      "customerPerspective": "Jaclyn from Groundwork East wants estimated costs shown on report D05Pe, but has not yet specified which hours, rates, or formula should be used."
-    },
-    {
-      "title": "Show reference and weight on purchase orders",
-      "executiveSummary": "Add reference and weight information to the purchase order output so these details can be viewed on the generated document.",
-      "problem": "Purchase orders do not currently show the reference and weight fields requested by Espresso Road, and no customer-facing resolution has been provided.",
-      "impact": "Reduces the need to obtain reference and weight information separately when using a purchase order. Priority reason: this is a focused document-output improvement with a clear request but limited evidence about broader usage.",
-      "scope": "First version: confirm the existing source fields, add reference and weight to the standard purchase order layout, define sensible handling for blank values, and test preview and generated output. Non-goals: adding new data-entry fields, changing purchase order calculations, redesigning the full document, or creating customer-specific layout configuration.",
-      "risks": "The intended reference field may be ambiguous.,Weight may exist at line or order level and may require aggregation or units.,Layout changes could affect pagination or existing purchase order formats.",
-      "questions": "Which reference field should appear?,Should weight be shown per line, as an order total, or both?,Which weight unit and formatting should be used?,Should empty values be hidden or shown as blank labels?",
-      "priority": "medium",
-      "estimatedDevEffort": "3-6 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-05",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the estimated start date. The range includes implementation, testing, review, and minor revisions. Field mapping, weight aggregation, document-template behavior, regression coverage, and dependencies on the purchase order rendering system are technical unknowns that could move the dates.",
-      "evidence": [
-        "Customer asked to show reference and weight on a purchase order.",
-        "Ticket opened on 2026-04-28.",
-        "The existing summary records the request as a feature request.",
-        "No customer reply is recorded after the request."
-      ],
-      "sourceChatIds": [
-        "0b7848ee-2661-4ab6-ab2f-0ce6ed79db3b"
-      ],
-      "aiSource": "Codex",
-      "id": "79fcb373-dcd0-4ed1-aa4e-c1b4a29b30b5",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Show the reference and weight on each purchase order so people can see those details on the document.",
-      "customerPerspective": "Duane Baguley from Espresso Road Ltd wants purchase orders to show the reference and weight."
-    },
-    {
-      "title": "Validate and close the ST04 Reference field enhancement",
-      "executiveSummary": "Approve a short verification and release-closure activity for the delivered ST04 option that shows the material Reference field. Confirm the Excel output contains the supplier part number stored in that field and obtain customer confirmation before closing the request.",
-      "problem": "The customer needed the ST04 stock list to include the Reference field used for supplier part numbers. Tidy reported that the report was updated, but no customer confirmation is recorded.",
-      "impact": "Verification would establish whether the delivered report change satisfies the stated reporting need and identify any remaining defect before the ticket is closed.",
-      "scope": "First version: verify the show/hide Reference option in ST04, confirm the Reference value appears correctly in the Excel output, check that existing report output remains intact, communicate the result, and seek customer confirmation. Non-goals: creating a new report, changing supplier synchronization with Xero, restructuring material or supplier data, or adding other report fields.",
-      "risks": "The option may be present but fail in a particular export format or data condition. The original ticket also contains an unrelated supplier/Xero question, which should not be treated as part of this report change.",
-      "questions": "Has the customer rerun ST04 using the new option?,Does the Reference value appear in the required Excel column for materials with supplier part numbers?,Has the update already passed release and regression checks?,Can the request be closed if verification succeeds but the customer remains unresponsive?",
-      "priority": "low — the requested feature has already been reported as delivered; only verification and closure remain.",
-      "estimatedDevEffort": "1-3 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-07-30",
-      "estimateAssumptions": "This independent scenario assumes approval, one developer's capacity, and access to suitable report data from the start date. The estimate includes technical verification, export testing, review, and customer-facing confirmation. Unknown release state, data-specific behavior, regression findings, and dependencies on test data or customer response could move the dates.",
-      "evidence": [
-        "The customer uses the Reference field for supplier part numbers.",
-        "The customer requested an Excel report containing material code, supplier name, and Reference.",
-        "The existing ST04 report did not previously show the Reference field.",
-        "Tidy stated that ST04 was updated with a show/hide option for Reference.",
-        "No customer confirmation of the delivered change is recorded."
-      ],
-      "sourceChatIds": [
-        "422cdb2a-0a5d-404a-a60a-de9cec7ac7c8"
-      ],
-      "aiSource": "Codex",
-      "id": "4339eb25-f671-4c64-9032-8fc123d357c6",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Check that the stock list can show each supplier’s part number in the Reference field. Confirm that it works before closing the request.",
-      "customerPerspective": "Peter Holbrow from Pollution Monitors Ltd wants the ST04 stock list to include the Reference field, where supplier part numbers are stored. The report was updated, but he has not yet confirmed that the change meets his need."
-    },
-    {
-      "title": "Open a project directly from a unique Quick Find result",
-      "executiveSummary": "Approve a small Quick Find enhancement that navigates directly to a project when an exact project-code search resolves to one accessible result, while retaining the current results list for ambiguous searches.",
-      "problem": "Quick Find currently presents a results list even when a project-code search has only one match, requiring an additional click before opening the project.",
-      "impact": "The enhancement would remove one interaction from repeated project-code searches. The ticket states that the customer performs this workflow throughout the day.",
-      "scope": "First version: detect a single accessible project result for an exact project-code search and open it directly; retain the result list for zero, multiple, partial, or mixed-entity matches; and regression-test keyboard and mouse search flows. Non-goals: redesigning Quick Find, changing search ranking, altering permissions, adding new searchable entities, or auto-opening ambiguous partial matches.",
-      "risks": "Immediate navigation could surprise users who expect to review results. Search timing, partial matches, mixed result types, permissions, and browser navigation behavior could complicate an otherwise small change.",
-      "questions": "Should direct navigation require an exact project-code match or apply to any query with one result?,Does Quick Find return entities other than projects in the same result set?,Should users be able to disable the behavior?,Are there analytics or usability checks needed before making it the default?",
-      "priority": "medium — it is a bounded usability improvement for a frequently repeated workflow, but the current behavior remains functional.",
-      "estimatedDevEffort": "3-6 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-05",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the start date. The estimate includes technical investigation, implementation, interaction and regression testing, and review. Unknown search architecture, result types, exact-match semantics, accessibility behavior, and dependencies on product decisions could move the dates.",
-      "evidence": [
-        "The customer searches for projects using Quick Find.",
-        "A single matching project is currently shown in a one-item results list.",
-        "The customer requested immediate opening when only one project matches.",
-        "Tidy logged the suggestion as internal feedback.",
-        "Tidy offered Professional Services implementation if the customer wants it sooner."
-      ],
-      "sourceChatIds": [
-        "cb8137d2-bcd6-4299-84f2-0048adfebfe4"
-      ],
-      "aiSource": "Codex",
-      "id": "3bf656f8-066c-4f2a-84d9-20bc4f00e025",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "When a project search finds exactly one match, open that project right away instead of showing a list first.",
-      "customerPerspective": "Andrew Lange from QGE Group searches for projects throughout the day. He wants Quick Find to open a project immediately when its code has only one match, removing an extra click."
-    },
-    {
-      "title": "Support percentage-based custom pricing",
-      "executiveSummary": "Approve a scoped enhancement allowing custom pricing to be expressed as a percentage adjustment from the standard charge price, alongside the existing fixed-price behavior. The calculated custom price should update when the standard charge price changes.",
-      "problem": "Custom pricing currently expects a fixed price. The customer wants to enter a percentage discount so custom prices do not require separate manual revision after changes to the standard charge price.",
-      "impact": "Percentage-based custom pricing would reduce duplicate price maintenance and the associated opportunity for manual entry errors in the described workflow.",
-      "scope": "First version: add an explicit percentage-based custom-pricing mode, store the percentage separately from fixed prices, calculate the resulting price from the current standard charge, display the mode and calculated outcome clearly, and test affected pricing paths. Non-goals: supplier-price automation, bulk standard-price updates, promotional scheduling, tiered discounts, stacked discounts, or broader pricing-engine redesign.",
-      "risks": "Pricing changes can affect downstream calculations. Rounding, tax treatment, existing fixed custom prices, negative or excessive percentages, and the exact point at which the calculated value is evaluated must be defined and tested.",
-      "questions": "Should percentage pricing coexist with fixed custom pricing on the same product for different customers?,What rounding rules should apply to the calculated price?,What percentage limits and validation are required?,Which transactions, documents, and reports consume custom pricing and must reflect the calculation?,Should existing fixed custom prices remain unchanged by default?",
-      "priority": "high — the request concerns recurring price maintenance and Tidy has already committed to scoping it for a quote.",
-      "estimatedDevEffort": "12-20 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-28",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the start date. The estimate includes technical investigation, data-model and UI changes, pricing-path testing, regression testing, and review. Unknown rounding and tax rules, downstream pricing consumers, migration behavior, bulk workflows, and dependencies on product decisions or customer clarification could move the dates.",
-      "evidence": [
-        "The customer requested entering a discount as a percentage under custom pricing.",
-        "The customer described a 30% discount example.",
-        "The stated goal is to avoid revising custom prices after standard charge changes.",
-        "Tidy acknowledged potential time savings and reduced manual-entry error.",
-        "The customer asked to proceed to a quote or rough cost estimate.",
-        "Tidy stated that Professional Services would provide a quote after scope finalization."
-      ],
-      "sourceChatIds": [
-        "70d61dc9-17f1-4dcc-8965-4fef05234995"
-      ],
-      "aiSource": "Codex",
-      "id": "c4967dda-3a3e-44d8-bd13-581001963e58",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let custom prices use a percentage discount instead of only a fixed amount. The custom price would then change when the standard price changes.",
-      "customerPerspective": "Mike Stevens from CRS Accessories (Hach Tech Pty Ltd) wants to enter percentage discounts under custom pricing. He currently has to revise custom prices separately when the standard charge price changes."
-    },
-    {
-      "title": "Add bulk updates for location-based stock thresholds",
-      "executiveSummary": "Approve a controlled import for updating reorder and maximum stock levels by item and location. The first version should accept XLS or CSV data using the fields already requested for the manual workaround and validate all rows before applying changes.",
-      "problem": "Reorder and maximum stock levels are location-based, and Tidy currently has no bulk update capability for them. Updating a few hundred products therefore requires manual assistance or individual changes.",
-      "impact": "A bulk update would reduce the repeated work involved in maintaining stock thresholds across many item-location combinations and replace the offered manual file-processing workaround with a repeatable product workflow.",
-      "scope": "First version: import XLS or CSV containing item code, location, reorder level, and maximum value; validate item-location matches and numeric values; show errors before confirmation; and apply valid updates with a result summary. Non-goals: changing stock quantities, creating products or locations, automatically calculating threshold values, scheduling recurring imports, or supporting unrelated product fields.",
-      "risks": "Incorrect item-location matching or invalid values could affect replenishment settings at scale. Existing import infrastructure, permissions, audit requirements, and expected behavior for missing or duplicate rows require confirmation.",
-      "questions": "Should any validation prevent a reorder level from exceeding the maximum value?,Should the import be all-or-nothing or allow valid rows to proceed?,How should duplicate item-location rows be handled?,Are permissions or audit records required for bulk threshold changes?",
-      "priority": "medium — the customer has several hundred updates and no current self-service bulk capability, but a manual workaround has been offered.",
-      "estimatedDevEffort": "8-13 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-18",
-      "estimateAssumptions": "This independent scenario assumes approval, one developer's capacity, and access to a representative customer file from the start date. The estimate includes technical investigation, implementation, import validation, testing, and review. Unknown import-framework reuse, permissions, audit behavior, file size, duplicate handling, and dependencies on sample data or product decisions could move the dates.",
-      "evidence": [
-        "The customer needs to update a few hundred products.",
-        "The values are location-based rather than solely item-based.",
-        "Tidy stated that no bulk update capability currently exists.",
-        "The manual workaround requests item code, location, reorder level, and maximum value in XLS or CSV format."
-      ],
-      "sourceChatIds": [
-        "f41a2fee-44f8-434a-8bdf-c177220ae6d8"
-      ],
-      "aiSource": "Codex",
-      "id": "ede22baa-66d9-470d-88c9-8dcf8577b15f",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let people update reorder and maximum stock levels for many products and locations at once by importing a file.",
-      "customerPerspective": "Michael Smith from Specialist Wheels & Castors, also known as Universal Handling Equipment, needs to import reorder and maximum stock levels for a few hundred products. Tidy does not currently provide a bulk update for these location-based values."
-    },
-    {
-      "title": "Define and build a first-version bulk project import",
-      "executiveSummary": "Approve discovery and implementation of a structured bulk project import after obtaining a representative customer file. The first version should support an agreed, documented format and provide validation feedback before creating projects.",
-      "problem": "TidyWork has an API for programmatic project creation but no flat-file function for creating multiple projects with their related record types.",
-      "impact": "A bulk import would provide a supported path for creating multiple projects without requiring the customer to build directly against the API. The likely import structure cannot be finalized until a sample file is reviewed.",
-      "scope": "First version: evaluate a representative source file, define one supported import template, validate required project and agreed related-record fields, report row-level errors, and create valid projects through existing application logic. Non-goals: accepting arbitrary customer file layouts, supporting every project field or related record type, continuous synchronization, or replacing the existing API.",
-      "risks": "Projects may contain multiple related record types, making a flat format ambiguous. Data validation, partial failures, duplicate handling, and the structure of the customer's source file could materially change the design.",
-      "questions": "Can the customer provide a representative file and expected project outcomes?,Which related records—such as tasks, materials, or plans—must be included in the first version?,What duplicate-detection and partial-failure behavior is acceptable?,Is an existing import framework available for reuse?",
-      "priority": "medium — the requested capability does not exist, but its requirements and input structure remain undefined.",
-      "estimatedDevEffort": "15-25 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-09-04",
-      "estimateAssumptions": "This independent scenario assumes approval, one developer's capacity, and receipt of a representative file by the start date. The estimate includes technical investigation, format design, implementation, validation, testing, and review. Unknown project relationships, data volumes, duplicate rules, API reuse, security constraints, and dependency on customer examples or product decisions could move the dates.",
-      "evidence": [
-        "The customer asked whether individual projects can be created through bulk import.",
-        "Tidy stated that no flat CSV import is available.",
-        "Tidy stated that an API can create projects and associated information programmatically.",
-        "Tidy requested an example file to evaluate a special import structure."
-      ],
-      "sourceChatIds": [
-        "e50b4e69-e5ab-4c3f-abf1-82a2e95bb317"
-      ],
-      "aiSource": "Codex",
-      "id": "88a030ed-e8e6-4ab5-83ab-2ad273e58d0f",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let people create many projects at once by importing a prepared file. Check the file for problems before creating the projects.",
-      "customerPerspective": "Sophie Jones-Kelly from Acacia Environmental Management wants a bulk import function for creating individual projects. TidyWork currently offers an API but does not provide a file-based import for projects and their related records."
-    },
-    {
-      "title": "Clarify and update address field terminology",
-      "executiveSummary": "Approve a small, discovery-gated change to replace or supplement the current Physical Address and Postal Address labels with Delivery Address and Invoice Address. Implementation should wait for a decision on whether the terminology is global or customer-specific.",
-      "problem": "The current address labels do not match the terminology requested by V-Zug UK, and the intended application of the alternative wording remains unresolved.",
-      "impact": "The change could make the two address purposes clearer in the affected workflow. The ticket does not establish whether other users need or would accept the same terminology.",
-      "scope": "First version: confirm whether the labels should change globally or only for the requesting customer, update the two labels in the agreed address views, and regression-test affected screens. Non-goals: changing address data structures, adding new address types, altering stored address data, or introducing a general theming system.",
-      "risks": "A global wording change could be unsuitable for other users, while customer-specific labels could require configuration that does not currently exist. The customer has not answered the terminology question.",
-      "questions": "Should the requested wording replace the existing labels globally or be customer-specific?,If both sets of terms must remain available, does an existing configuration mechanism support this?,Which screens, exports, and documents currently display these labels?",
-      "priority": "low — the request is a terminology improvement, and confirmation of the desired behavior is still outstanding.",
-      "estimatedDevEffort": "3-6 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-05",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the start date. The estimate includes technical investigation, implementation, testing, and review. Unknown label reuse, configuration support, affected views, localization, and dependency on customer clarification could move the dates.",
-      "evidence": [
-        "The customer requested changing Physical Address to Delivery Address.",
-        "The customer requested changing Postal Address to Invoice Address.",
-        "Tidy asked whether both terminologies should be available or only the requested wording.",
-        "No customer response to the clarification is recorded."
-      ],
-      "sourceChatIds": [
-        "d056739a-9b1f-4020-89ac-ef88e09cedd1"
-      ],
-      "aiSource": "Codex",
-      "id": "d9a8ee18-af82-4bee-8acf-a4e09d7b051d",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Rename the two address fields so it is clearer which address is for deliveries and which is for invoices. First, decide whether everyone should see the new names or only certain customers.",
-      "customerPerspective": "Martin Smy from V-Zug UK Limited wants Physical Address renamed to Delivery Address and Postal Address renamed to Invoice Address."
-    },
-    {
-      "title": "Export project time by invoiced status",
-      "executiveSummary": "Add an Excel-compatible project-time export that mirrors the project console's time view and distinguishes currently invoiced from uninvoiced time.",
-      "problem": "The available project and timesheet reports do not reproduce the time information shown in the project console. The customer needs a report showing project time split between invoiced and uninvoiced as of the time it is run.",
-      "impact": "The export would let project users review and analyze current invoiced and uninvoiced time outside the console, including for fixed-cost projects where existing customer-facing reports may not expose underlying time.",
-      "scope": "Provide a project-scoped, Excel-compatible export of the time entries shown in the project console, including each entry’s current invoiced or uninvoiced status and an as-of timestamp. The first version will respect existing permissions; it will not change billing behavior, replace existing reports, or provide cross-project analytics.",
-      "risks": "The exact console fields to replicate are not specified; invoiced status may be affected by reversals, credits, drafts, or later changes; fixed-cost projects may not have a simple relationship between time and invoice lines; large exports may require performance controls.",
-      "questions": "Which columns from the project console Time view are required?,Is one project per export sufficient for the first version?,What event makes a time entry invoiced?,How should draft, reversed, credited, or partially invoiced time be classified?,Is CSV acceptable, or is a native XLSX file required?,Should fixed-cost project time follow the same status rules?",
-      "priority": "Medium — addresses a confirmed reporting gap, but required fields and invoiced-status rules remain unresolved.",
-      "estimatedDevEffort": "8-13 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-12",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes requirements confirmation, invoicing-status analysis, export implementation, permission and fixed-cost testing, performance checks, code review, and release preparation. Unknown invoice-to-time relationships, console data sources, reversal and partial-invoice rules, export format requirements, and stakeholder dependencies could move the dates.",
-      "evidence": [
-        "The customer asked whether fixed-cost projects omit time from the project statement report.",
-        "The customer asked for an Excel report based on the project console.",
-        "Support suggested existing PR and TP reports.",
-        "The customer said the suggested reports did not replicate the required view.",
-        "The customer wants to see time invoiced and uninvoiced as of now.",
-        "No follow-up commitment appears in the ticket."
-      ],
-      "sourceChatIds": [
-        "d5de5f83-47ce-4f3c-a9d4-a11c15c510fa"
-      ],
-      "aiSource": "Codex",
-      "id": "1c5330c5-e506-4f66-9404-b17bd4a0a98e",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users download a spreadsheet showing the project time they see in the project console. The spreadsheet should separate time that has been invoiced from time that has not.",
-      "customerPerspective": "Lee Horobin from North Group cannot find a report that matches the time shown in the project console. He wants a current spreadsheet showing invoiced and uninvoiced project time, including for fixed-cost projects."
-    },
-    {
-      "title": "Show receipting totals including freight and tax",
-      "executiveSummary": "Add a live order-receipting summary showing line-item, freight, tax, and final totals so entered values can be checked against a supplier invoice before completion.",
-      "problem": "The Receive Order page does not show a total that includes freight entered as landing costs. The customer must manually add values to confirm that the receipt matches the supplier invoice, with tax and rounding differences adding difficulty.",
-      "impact": "Visible totals would make receipt verification faster and help users identify discrepancies before the transaction reaches supplier-payment or Xero reconciliation workflows.",
-      "scope": "Add a read-only summary to the Receive Order page showing received line-item amounts, entered freight or landing costs, tax, and the final total using existing calculation and rounding rules. The first version will update as receipt values change; it will not alter pricing, tax rules, supplier rounding, or accounting integration behavior.",
-      "risks": "Suppliers may calculate tax on totals rather than per line; freight may have different tax treatment; partial receipts and rounding could make the displayed total differ from a supplier invoice; landing-cost allocation behavior may complicate the calculation.",
-      "questions": "Should totals cover only the current receipt or the full purchase order?,How should partial receipts be represented?,Is freight always taxable, or must its tax treatment be configurable?,Should both net and tax-inclusive totals always be shown?,Should rounding differences be displayed separately?",
-      "priority": "Medium — removes a confirmed manual verification step, although partial receipts and tax treatment require clarification.",
-      "estimatedDevEffort": "6-10 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-07",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes calculation analysis, user-interface work, testing across freight, tax, rounding, and partial-receipt cases, code review, and release preparation. Unknown landing-cost logic, tax configurations, rounding behavior, Xero-related data flow, and stakeholder clarification could move the dates.",
-      "evidence": [
-        "The Receive Order page accepts freight or freight surcharge through landing costs.",
-        "The customer said the page does not show a total including freight.",
-        "The customer currently adds amounts manually to verify the supplier invoice.",
-        "The customer requested line-item totals including freight.",
-        "The customer prefers a total including tax.",
-        "Support noted that tax may be calculated per line or on the order total."
-      ],
-      "sourceChatIds": [
-        "4797132d-6635-48db-937f-dab701e38792"
-      ],
-      "aiSource": "Codex",
-      "id": "ffb0c485-f59d-47e7-9527-2ce4282897d0",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Show the full total while receiving an order, including its items, freight, and tax. This lets users check the entered amount against the supplier's invoice.",
-      "customerPerspective": "Graeme Voss from Auld & Voss (1979) Ltd has to add the item and freight amounts himself because the receipting page does not show a complete total. He wants a net or tax-included total so he can quickly check that the receipt matches the supplier invoice."
-    },
-    {
-      "title": "Remove unused materials safely and exclude archived materials from component selection",
-      "executiveSummary": "Provide a safe removal workflow for unused material items while ensuring archived materials no longer clutter normal component-selection lists.",
-      "problem": "The customer wants to delete an unused material rather than archive it because archived materials remain visible in component lists and cause confusion. The current rules protect materials that are actual components of current assemblies.",
-      "impact": "A clearer removal workflow would reduce component-list clutter while preserving assembly integrity and necessary historical records.",
-      "scope": "Hide archived materials from component selectors by default and allow permanent deletion only when no blocking references exist, with confirmation and a clear explanation when deletion is unavailable. The first version will retain archive and restore as the reversible path; it will not cascade deletions or remove materials required by assemblies, transactions, or historical records.",
-      "risks": "Materials may be referenced by transactions, assemblies, audit records, or reports not visible in the ticket; permanent deletion may conflict with record-retention requirements; filtering archived items could affect users who intentionally need to locate them.",
-      "questions": "Which references must block permanent deletion?,Must historical transactions retain the material record?,Should archived materials be hidden from all selectors or only component lists?,Should users be able to reveal archived materials with a filter?,Which roles may permanently delete a material?",
-      "priority": "Medium — reduces confirmed selector confusion while preserving safeguards around referenced material records.",
-      "estimatedDevEffort": "8-13 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-12",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes reference analysis, permission and confirmation behavior, selector filtering, automated and manual integrity testing, review, and release preparation. Unknown database relationships, audit and retention rules, authorization requirements, historical reporting dependencies, and migration needs could move the dates.",
-      "evidence": [
-        "The earlier incorrect component message for NEW123 was removed.",
-        "The customer said archived materials remain in component lists.",
-        "The customer said this visibility causes confusion.",
-        "The customer explicitly requested deletion rather than archiving.",
-        "Support stated that an item cannot be archived when it is an actual component of a current assembly.",
-        "The deletion request remains unanswered in the ticket."
-      ],
-      "sourceChatIds": [
-        "8f0f5adb-3a9a-4516-981b-58493d2bb06d"
-      ],
-      "aiSource": "Codex",
-      "id": "f8b9a901-bf19-4574-a3f5-c44af147fdf7",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users safely delete materials that are no longer needed. Archived materials should also stay out of normal component lists.",
-      "customerPerspective": "Rosalind Hunt from Rozcraft Limited wants to delete an unused material instead of archiving it. Archived materials still appear in component lists and create confusion."
-    },
-    {
-      "title": "Complete and standardize saved email cover text",
-      "executiveSummary": "Finish and validate the saved email cover-text capability already implemented for the customer, including consistent behavior for invoice, quote, and purchase-order emails and the outstanding purchase-order reference placeholder.",
-      "problem": "Users previously had to re-enter document email text each time. A complimentary customization has been implemented, but the available placeholders are not yet fully consistent, with the purchase-order Supplier Reference placeholder still outstanding.",
-      "impact": "Completing the capability would reduce repetitive entry and make outgoing document emails more consistent while closing the remaining implementation gap.",
-      "scope": "Validate saved default email text for invoices, quotes, and purchase orders, then add and test the outstanding purchase-order Supplier Reference placeholder. The first version will preserve limited subject customization and allow editing before sending; it will not introduce a general template designer, multiple templates, or conditional logic.",
-      "risks": "Placeholder names and source fields may differ between sales and purchase documents; missing values could produce confusing output; the customization may not yet be generalized across customers; changes could affect existing configured text.",
-      "questions": "Is the implemented customization customer-specific or available as a standard setting?,What exact Supplier Reference field should the purchase-order placeholder use?,Which document types and placeholders have already been tested?,Should empty placeholder values be omitted or rendered as blank text?,Has the customer approved the current wording and behavior?",
-      "priority": "High — completes and standardizes an already implemented capability with one documented placeholder gap.",
-      "estimatedDevEffort": "4-7 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-04",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes reviewing the existing customization, implementing the remaining placeholder, regression testing invoice, quote, and purchase-order emails, code review, documentation, and release preparation. Unknown customization architecture, placeholder parsing, field availability, deployment dependencies, and customer acceptance could move the dates.",
-      "evidence": [
-        "The customer asked to save email text instead of entering it for every document.",
-        "Support initially confirmed that preset email-body text was unavailable.",
-        "Peter later asked the customer to review implemented email cover-text changes.",
-        "Peter stated that the email subject could also be customized to a limited degree.",
-        "CustomerReference and SupplierNumber were identified as possible derived values.",
-        "The ticket summary records an outstanding purchase-order Supplier Reference placeholder."
-      ],
-      "sourceChatIds": [
-        "c40ed5f6-5659-4b10-b11d-70a2a74a02dc"
-      ],
-      "aiSource": "Codex",
-      "id": "8c7af9e6-e99c-4c85-a5f7-164a24de1331",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let users save reusable text for emails that send invoices, quotes, and purchase orders. Make the available document details work consistently in each type of email.",
-      "customerPerspective": "Dean Harrison from Hinton Engineering Supplies has to enter the same email text each time he sends documents such as invoices. He wants to save that text for reuse, while the existing customization still needs consistent placeholders, including the purchase-order supplier reference."
-    },
-    {
-      "title": "Archive inactive departments and add project State reporting",
-      "executiveSummary": "Add an archive state for unused departments and an optional State field for projects, including State in the D05 Projects Summary CSV export.",
-      "problem": "Departments with no active users occupy space in project setup but cannot be deleted because disabled users remain assigned to them. Projects also lack the geographic State information needed in the customer's D05 reporting workflow.",
-      "impact": "Archived departments would reduce clutter during project setup. Capturing and exporting State would let the customer include project geography in its existing reporting process.",
-      "scope": "Allow eligible departments to be archived and restored, hiding them from normal project setup while preserving existing associations and records. Add an optional State field to projects and include it in the D05 Projects Summary CSV; the first version will not delete departments, reassign users, validate addresses, or modify other reports.",
-      "risks": "Department references may affect historical records or other selectors; archive eligibility and visibility rules are not yet confirmed; adding a D05 column may affect downstream spreadsheet imports; State format, allowed values, and behavior for existing projects remain undecided.",
-      "questions": "Should archived departments remain visible on existing projects and historical reports?,Who may archive or restore a department?,Should archived departments be excluded from every selector or only project setup?,Should State be free text or a controlled list?,Should State be optional for both new and existing projects?,What was agreed in the scheduled customer meeting?",
-      "priority": "Medium — addresses confirmed setup clutter and a specific D05 reporting need, but archive rules and the meeting outcome are not established.",
-      "estimatedDevEffort": "10-16 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-17",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes requirements confirmation, implementation, migration-safe handling, automated and manual testing, CSV regression testing, code review, and release preparation. Unknown department relationships, authorization rules, project schema changes, D05 consumers, meeting outcomes, and stakeholder dependencies could move the dates.",
-      "evidence": [
-        "The customer has many departments with no active users.",
-        "The departments cannot be deleted because disabled users remain assigned to them.",
-        "The customer said the departments clutter project setup.",
-        "The customer requested a State option in project setup.",
-        "The customer requested State in the D05 Projects Summary CSV export.",
-        "A Teams meeting with the development and design team was scheduled.",
-        "No meeting outcome or implementation commitment appears in the ticket."
-      ],
-      "sourceChatIds": [
-        "c2d696b1-669f-4bbc-8776-71fdfcfe75cf"
-      ],
-      "aiSource": "Codex",
-      "id": "342cb8eb-a977-4932-9412-9136d032f527",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let unused departments be archived so they do not crowd the project setup page. Also let projects store a State and include it in the project summary download.",
-      "customerPerspective": "Daisy Tian from Synertec wants to hide departments with no active users because they take up space and cannot be deleted while disabled users remain assigned. She also wants to record each project's State and include it in the D05 Projects Summary CSV for geographic reporting."
-    },
-    {
-      "title": "Assess QuickBooks Online integration feasibility",
-      "executiveSummary": "Run a bounded technical discovery to determine whether a TidyStock integration with QuickBooks Online is feasible and worth considering, without reversing the current position that no integration is planned.",
-      "problem": "A customer using Xero may move to QuickBooks Online and has asked whether TidyStock can provide a similarly easy synchronization path. TidyStock currently has no QuickBooks Online integration or plan to build one.",
-      "impact": "Without a supported synchronization option, customers moving to QuickBooks Online may need a manual accounting workflow. The ticket provides one confirmed request but does not establish broader demand.",
-      "scope": "Conduct a bounded discovery of the workflow currently served by Xero, relevant QuickBooks Online constraints, possible synchronization boundaries, and expected implementation and maintenance effort. Produce a proceed-or-decline recommendation; this version will not build an integration, promise Xero parity, support QuickBooks Desktop, or commit to delivery.",
-      "risks": "The request may not justify ongoing integration maintenance; QuickBooks Online API, authentication, accounting-mapping, regional, and certification constraints are unknown; the customer's required synchronization behavior has not been specified.",
-      "questions": "Which Xero synchronization workflows does the customer need to preserve?,Is the possible accounting-platform transition confirmed or exploratory?,Are there other verified requests for QuickBooks Online support?,What ongoing support and compatibility obligations would an integration create?",
-      "priority": "Low — evidence is limited to one exploratory request, and the current stated position is that no integration is planned.",
-      "estimatedDevEffort": "3-5 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-07-31",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer's capacity are available from the stated start date. The estimate includes technical discovery, limited validation, review, and documentation. QuickBooks Online API access, authentication, accounting mappings, the existing Xero implementation, stakeholder answers, and other technical dependencies remain unknown and could move the dates.",
-      "evidence": [
-        "The customer currently uses Xero for financials.",
-        "The customer may transition to QuickBooks Online.",
-        "The customer asked whether TidyStock could sync with QuickBooks Online as easily as Xero.",
-        "Support confirmed that no QuickBooks Online integration currently exists.",
-        "Support stated that there were no plans to build the integration."
-      ],
-      "sourceChatIds": [
-        "dcca5c48-d640-413e-a9dc-307a6a098de0"
-      ],
-      "aiSource": "Codex",
-      "id": "acee5b5d-aa5c-4b4c-b29b-a012fa22d9ba",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Check whether TidyStock could connect to QuickBooks Online and share accounting information with it. This research would happen before deciding whether to build the connection.",
-      "customerPerspective": "Becky Darsch from Jambo Jewellery Limited may move from Xero to QuickBooks Online and wants to know whether she can sync TidyStock with it as easily as she does with Xero."
-    },
-    {
-      "title": "Rural shipping surcharge and Waiheke Island destination exclusion",
-      "executiveSummary": "Add configurable shipping rules that apply a $15 surcharge to rural addresses and prevent shipping to Waiheke Island, after confirming how each destination category can be identified reliably.",
-      "problem": "The customer wants rural deliveries to incur an additional $15 charge and Waiheke Island to be unavailable as a shipping destination, but the current configuration has not been shown to support either rule.",
-      "impact": "The customer's requested shipping charges and destination restrictions are not being enforced through the current process.",
-      "scope": "First version: apply a $15 surcharge when an address is identified as rural; block completion of shipping selection for addresses identified as Waiheke Island; provide a clear user-facing explanation when the destination is blocked; and test representative matching and non-matching addresses. Non-goals: a general shipping-rate engine, changes to base shipping prices, carrier integration work, automatic correction of invalid addresses, or restrictions for destinations other than Waiheke Island.",
-      "risks": "The system may not have a reliable rural-address indicator. Address text can be incomplete or inconsistent, and Waiheke Island may be represented through suburbs, localities, or postcodes. Incorrect matching could overcharge or block valid orders.",
-      "questions": "How is a rural address currently identified in the shipping process?,Is the $15 amount a surcharge added to the existing charge, and does its tax treatment need to match current shipping charges?,Which suburbs, localities, or postcodes should count as Waiheke Island?,Should staff be able to override the surcharge or destination block?,At what point should the blocked-destination message appear?,Does the rule apply to all orders and shipping methods?",
-      "priority": "high — the request has been unresolved for nearly three months, and the only follow-up asked whether it was still required without providing an answer or workaround.",
-      "estimatedDevEffort": "10-18 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-28",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the estimated start date. The range includes rule design, implementation, representative address testing, regression testing of shipping charges and checkout behavior, code review, and release review. Technical unknowns include address data quality, rural classification data, Waiheke matching rules, tax handling, overrides, and the current shipping architecture. Dependencies on customer confirmation, postcode or locality data, external address services if required, testing, review, or release scheduling could move the dates.",
-      "evidence": [
-        "The customer requested a $15 charge for rural addresses.",
-        "The customer requested that Waiheke Island be excluded as a shipping destination.",
-        "The request was opened on 2026-04-13.",
-        "The next supplied response was sent on 2026-07-02.",
-        "The response only asked whether the request was still required.",
-        "No implemented solution or workaround appears in the messages."
-      ],
-      "sourceChatIds": [
-        "8cb3cc56-e775-4fe1-b755-6d4bfb3467c9"
-      ],
-      "aiSource": "Codex",
-      "id": "61ef243d-bfdd-4bb3-aa29-a110bd40753d",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let businesses add an extra charge for deliveries to rural addresses and stop orders from being shipped to Waiheke Island.",
-      "customerPerspective": "Mell Adams from Bene Footwear wants to add a $15 charge for rural deliveries and completely exclude Waiheke Island as a shipping destination."
-    },
-    {
-      "title": "Copilot integration feasibility and requirements discovery",
-      "executiveSummary": "Run a bounded discovery to identify the Copilot product and use case intended by the requester, evaluate feasible Tidy integration surfaces, and produce a recommendation before committing to production development.",
-      "problem": "The customer asked whether Copilot integration can be configured, but the intended Copilot product, workflow, data access, and desired outcome are unspecified. Support indicated that such an integration is not currently on the roadmap.",
-      "impact": "Tidy cannot give a reliable capability answer or development proposal without clarifying the requested integration and assessing its technical and security implications.",
-      "scope": "First version: clarify the target Copilot product and user workflow; identify relevant Tidy data or actions; assess authentication, authorization, privacy, and available technical interfaces; validate one representative interaction where feasible; and deliver a documented go/no-go recommendation with a production estimate. Non-goals: a production Copilot integration, broad AI functionality, unrestricted access to Tidy data, support for multiple Copilot products, or commitments to roadmap delivery.",
-      "risks": "“Copilot” may refer to different products with materially different capabilities. Required interfaces may not exist or may impose licensing, security, privacy, or platform constraints. The desired use case could be broader than a single integration.",
-      "questions": "Which Copilot product is intended?,What specific user task should the integration perform?,Should Copilot read Tidy data, perform actions, or both?,Which users and records should it be permitted to access?,Are there security, privacy, licensing, or deployment constraints?,What related feature request did support refer to, if one exists?",
-      "priority": "low — the request is an initial capability inquiry with no defined use case, and support stated that the integration is not currently on the roadmap.",
-      "estimatedDevEffort": "5-8 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-07",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the estimated start date. The estimate covers requirements discovery, technical investigation, a limited feasibility validation where available interfaces permit it, security considerations, documentation, testing of any exploratory work, and technical review. Technical unknowns include the Copilot product, desired workflow, Tidy interfaces, authentication, permissions, licensing, and external platform constraints. Dependencies on customer clarification, access to relevant platform documentation or environments, security review, third-party availability, or review feedback could move the dates.",
-      "evidence": [
-        "The customer asked whether Copilot integration can be set up.",
-        "The ticket does not identify a specific Copilot product.",
-        "The ticket does not describe the intended workflow.",
-        "Support said the capability is not currently on the horizon.",
-        "Support suggested discussing the possibility with Kevin.",
-        "Support mentioned that a related feature request may exist."
-      ],
-      "sourceChatIds": [
-        "b400eb70-4eac-41c6-b07a-fd99360845e0"
-      ],
-      "aiSource": "Codex",
-      "id": "cadcdafc-740f-475b-8c57-3afc27aa4785",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Find out which Copilot tool should connect to Tidy and what the connection needs to do. Then decide whether building it is possible.",
-      "customerPerspective": "Wayne wants to know whether a Copilot integration can be set up, but the requested Copilot product and workflow have not been specified."
-    },
-    {
-      "title": "Sales Order customer sorting and wishlist assessment",
-      "executiveSummary": "Deliver customer-based sorting on the Sales Order screen as a bounded first improvement and assess the attached wishlist before proposing any additional screen changes.",
-      "problem": "The customer cannot sort the Sales Order screen by customer and has submitted additional desired improvements whose details are only contained in an attachment not present in the supplied ticket text.",
-      "impact": "The missing customer sort limits how the customer can organise the Sales Order list. The remaining impact cannot be assessed without reviewing the attachment.",
-      "scope": "First version: add customer sorting to the Sales Order screen with consistent ascending and descending behavior, preserve existing filters and pagination where applicable, and review the attachment to turn its items into separately testable requirements. Non-goals: implementing unspecified attachment items, redesigning the entire Sales Order screen, changing Sales Order workflows, or adding unrelated sorting and filtering options.",
-      "risks": "Customer names may have duplicates, blanks, or locale-specific ordering. Sorting may currently occur only within a loaded page rather than across the complete result set. The missing attachment prevents reliable estimation of the broader wishlist.",
-      "questions": "Can the referenced attachment be provided for review?,Should customer sorting use customer name, account code, or another value?,Should the selected sort persist between sessions?,Is sorting required across all matching orders or only the currently displayed page?,Which attachment items are highest priority after customer sorting?",
-      "priority": "medium — customer sorting is a clear usability request, but the broader wishlist is unavailable and no deadline or severity is stated.",
-      "estimatedDevEffort": "6-10 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-14",
-      "estimateAssumptions": "This independent scenario assumes approval and one developer's capacity are available from the estimated start date. The range covers customer sorting and requirements assessment of the attachment, plus automated and manual testing, code review, and release review; it does not include implementation of unspecified wishlist items. Technical unknowns include the current list-query architecture, pagination, sort persistence, customer data quality, and the attachment's contents. Dependencies on receiving the attachment, product prioritisation, test data, review, or release scheduling could move the dates.",
-      "evidence": [
-        "The customer submitted a wishlist for the Sales Order screen.",
-        "The wishlist details were provided through an attachment.",
-        "The customer separately requested the ability to sort by customer.",
-        "No support reply appears in the supplied messages.",
-        "The attachment contents are not included in the source ticket data."
-      ],
-      "sourceChatIds": [
-        "cf404675-e134-4fc1-a3da-9ee978818eb6"
-      ],
-      "aiSource": "Codex",
-      "id": "da64a857-e3b3-432b-bf3b-e0d3b1576b2b",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "Let people sort sales orders by customer. Also review the attached wish list to understand what other changes are being requested.",
-      "customerPerspective": "Christine McMahon from Sunshade Group Ltd wants to sort the Sales Order screen by customer and has provided an attachment with other requested improvements."
-    },
-    {
       "title": "Per-user view-only access for sales orders and inventory",
       "executiveSummary": "Introduce a supported per-user role that can view sales orders and inventory without creating orders, invoicing, editing records, or receiving purchaser capabilities.",
       "problem": "Existing standard roles do not provide the requested combination of sales-order and inventory visibility without edit, invoicing, order-entry, or purchaser access. The available view-only-style option applies at organisation level and is not fully refined.",
@@ -1834,62 +376,6 @@
       ],
       "eli5Summary": "Show a customer's payment terms while making a quote or sale. Automatically choose the matching branding when possible.",
       "customerPerspective": "The customer at VacMotion Ltd cannot see a customer's payment terms on the New Sale screen. They want the terms displayed there because they currently have to open the customer record for every new quote or sale to check which branding matches those terms."
-    },
-    {
-      "title": "Open the exact linked component from a component-list row",
-      "executiveSummary": "Change the component-row magnifying-glass action so it opens the single item already linked to that row, instead of running a fuzzy name search that can return the assembly and similarly named items.",
-      "problem": "The current action uses a contains-based search even though the selected component row already represents a specific linked item. Multiple results make it difficult to identify which material is actually in the assembly.",
-      "impact": "Users must interpret ambiguous search results to inspect an existing component, increasing lookup time and the possibility of selecting or reviewing the wrong item.",
-      "scope": "Change the magnifying-glass action on a linked component-list row to open the exact product or material referenced by that row. For historical or free-text rows without a usable identifier, retain the existing search behavior as a fallback. The first version will not redesign general product search or add new component-list columns.",
-      "risks": "Some historical component rows may not retain a usable linked item identifier.,The magnifying-glass control may be shared with general search behavior elsewhere.,Direct navigation could affect users who currently rely on the popup for broader searching.",
-      "questions": "Should the action open the item details directly or show a single-result popup?,Are there component rows that contain free text without a linked product or material record?,Should the item code also be displayed directly in the component list?",
-      "priority": "Medium — direct navigation removes an ambiguous lookup and reduces wrong-item review risk, though the evidence does not show how frequently the issue occurs",
-      "estimatedDevEffort": "3-6 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-03",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer’s capacity are available from 2026-07-27; it is not a promise or portfolio schedule.,Technical unknowns include whether every component row exposes a stable item identifier and whether the popup control is shared across screens.,The estimate includes implementation, regression testing for linked and unlinked rows, review, and validation of similarly named assembly and component cases.,Legacy data, shared search components, and the required destination view are dependencies or decisions that could move the dates.",
-      "evidence": [
-        "The reported example came from the components list for POUCHP.",
-        "The customer clicked the magnifying glass beside “Woven kete pouch 6cm.”",
-        "Two options appeared, including POUCHP, the assembly itself.",
-        "Support confirmed the popup uses name-contains behavior.",
-        "The customer wants to identify the product or material already in the components list.",
-        "The final request asks for one result rather than options."
-      ],
-      "sourceChatIds": [
-        "4fd516d3-de84-46d5-b8f7-89736cee379c"
-      ],
-      "aiSource": "Codex",
-      "id": "74f8376d-b392-42d7-af6c-89c3a85c179a",
-      "status": "ready",
-      "author": "Codex draft",
-      "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
-      "history": [
-        {
-          "at": "2026-07-19T05:15:57.204Z",
-          "by": "Codex",
-          "action": "created",
-          "status": "ready",
-          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
-        },
-        {
-          "at": "2026-07-19T05:29:48.004Z",
-          "by": "Codex",
-          "action": "content repaired",
-          "status": "ready",
-          "comment": "Repaired malformed scope/priority formatting; status unchanged."
-        },
-        {
-          "at": "2026-07-20T05:25:46.576Z",
-          "by": "Codex",
-          "action": "summary added",
-          "status": "ready",
-          "comment": "Added simple summary and grounded customer perspective; status unchanged."
-        }
-      ],
-      "eli5Summary": "When someone clicks the magnifying glass beside a component, open that exact item. Do not show a list of other items with similar names.",
-      "customerPerspective": "Rosalind Hunt from Rozcraft Limited wants the magnifying-glass action in a component list to show the exact material already linked to that row. It currently returns multiple similarly named options, including the assembly itself, so she cannot directly see which material is in the assembly."
     },
     {
       "title": "Add website text to Rozcraft quote and invoice cover letters",
@@ -2282,6 +768,357 @@
       ],
       "eli5Summary": "Let people move many materials to another project and task with one API call. They should not have to move each material separately or change its submission state first.",
       "customerPerspective": "Terry Karagounis from Australian Remanufacturing Pty Ltd wants to move materials between projects in bulk. The current API process makes him update each material individually through several steps, which is very slow."
+    },
+    {
+      "title": "Multi-Branch Sales Budget Reporting",
+      "executiveSummary": "Build a consolidated sales report that rolls up all branches into one view and adds branch-level sales budgets with variance reporting. This gives multi-site customers a native way to compare actual sales against targets without exporting data to spreadsheets.",
+      "problem": "Combined Tyres has nine branches and cannot currently see all branch sales on one report or report branch sales against a budget inside Tidy.",
+      "impact": "Without this feature, multi-branch customers must manually consolidate branch performance, which slows reporting, weakens accountability, and makes budgeting harder to operationalise.",
+      "scope": "First version: consolidated branch sales report, branch budget setup by period, and actual-versus-budget variance reporting. Non-goals: project budgeting changes, forecasting, and complex BI/dashboard tooling.",
+      "risks": "Reporting model across branches, budget period/granularity decisions, historical budget entry, permissions for budget maintenance",
+      "questions": "Should budgets be monthly, weekly, or annual? Is the report branch-only or also category/item-level? Which existing sales report should this extend? Are exports and scheduled delivery required in v1?",
+      "priority": "high - this supports core management reporting for a nine-branch customer and the customer is already asking for a quote",
+      "estimatedDevEffort": "8-12 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-19",
+      "estimateAssumptions": "Assumes branch sales data already exists in a reportable structure, no major permissions redesign is needed, and budgets can be stored at a simple branch-by-period level.",
+      "evidence": [
+        "Customer said: \"we have 9 branches in our business, i would like a sales report that shows them all on one report\".",
+        "Customer also asked: \"is there a way we could add a sales budget in so we could report sales against it?\".",
+        "Support replied: \"There isn’t currently a sales-budget feature or sales-versus-budget report.\""
+      ],
+      "eli5Summary": "Show every branch's sales together and compare them to sales targets in one place.",
+      "customerPerspective": "Michael Draffin from Combined Tyres wants a simpler way to manage and compare performance across nine branches.",
+      "sourceChatIds": [
+        "28f10219-17b0-47bb-9580-1ec6926d41e7"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "02819625-8249-4f2c-b032-6c41ae692ab2",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Inactive Customer Contacts",
+      "executiveSummary": "Add an inactive/archive status for customer contacts so old contacts can be retained without appearing as active. This preserves history while keeping account contact lists clean.",
+      "problem": "Customers currently have to delete contacts or leave outdated people in place because Tidy has no inactive status for customer contacts.",
+      "impact": "Without this feature, users risk losing useful history, cluttering contact lists, and contacting the wrong people.",
+      "scope": "First version: mark contacts inactive, hide inactive contacts from default views, and retain them on historical records. Non-goals: contact merge/deduplication, automated syncing, and complex approval workflows.",
+      "risks": "Historical record visibility, UI filter behaviour, downstream integrations using contact lists, deletion versus archive rules",
+      "questions": "Should inactive contacts still appear on old documents? Can inactive contacts be reactivated? Should email sending and document selection exclude inactive contacts by default?",
+      "priority": "medium - strong usability improvement, but mainly administrative rather than mission-critical transaction processing",
+      "estimatedDevEffort": "3-5 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-10",
+      "estimateAssumptions": "Assumes contacts are already a distinct entity and archiving can be implemented as a status flag rather than a data model redesign.",
+      "evidence": [
+        "Customer asked: \"Could you please advise if there is any way we can archive contacts not longer with certain clients\".",
+        "Support replied: \"there isn’t currently an \"archive/inactive\" status for customer contacts\".",
+        "Support noted the current option is to \"remove (delete) the contact\" from the client’s contact list."
+      ],
+      "eli5Summary": "Let staff hide old contacts instead of deleting them forever.",
+      "customerPerspective": "Michelle Harwood from Professional Fabrication Services wants to keep client contact lists accurate without losing old contact history.",
+      "sourceChatIds": [
+        "966eda4a-aa22-4363-9452-2a00d6041413"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "f01d8fa1-5eee-42fc-81ad-f11533e5999c",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Enhanced ST02 Reorder Report Fields",
+      "executiveSummary": "Extend the ST02 Reorder Report to include supplier reference code and material weight. This makes the report more directly usable for supplier reordering workflows.",
+      "problem": "Espresso Road relies on supplier reference codes and weight information when reordering, but the current ST02 report does not include those fields.",
+      "impact": "Without these fields, staff must cross-reference items manually, which slows purchasing and increases the chance of ordering mistakes.",
+      "scope": "First version: add supplier reference code and weight columns to ST02 and include them in export/print output where relevant. Non-goals: full report builder functionality or broader purchasing workflow redesign.",
+      "risks": "Field availability/consistency across materials, report layout constraints, export compatibility",
+      "questions": "Should the supplier reference use the existing \"reference\" field exactly as stored? What units should weight display in? Are sorting/grouping changes also needed?",
+      "priority": "medium - targeted report enhancement with clear customer value and relatively contained implementation scope",
+      "estimatedDevEffort": "2-4 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-07",
+      "estimateAssumptions": "Assumes both fields already exist on the underlying material/item data and ST02 can be extended without report engine changes.",
+      "evidence": [
+        "Customer asked for the ST02 Reorder Report to include the \"reference\" code.",
+        "Customer said the reference code is \"our supplier code\" and would make reordering easier.",
+        "Customer confirmed they also want \"the weight field included\"."
+      ],
+      "eli5Summary": "Put the supplier code and weight on the reorder report so buyers have the details they need in one place.",
+      "customerPerspective": "Duane Baguley from Espresso Road wants the reorder report to match the information his team uses with suppliers.",
+      "sourceChatIds": [
+        "073f27ec-aa2e-42aa-8cd8-e9b7bc9c7a52"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "6cc14daf-5ff4-466d-a57c-df82aa6a4b1f",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Tidy 3 Job Card and Packing Slip Printing",
+      "executiveSummary": "Provide Tidy 3-native job card and packing slip printouts with cleaner, production-friendly layouts. The first release should focus on the key information customers need without the excessive assembly detail they see today.",
+      "problem": "Sunshade Group currently prints these documents from Tidy 1, where the output contains too much assembly information and is time-consuming to format before printing.",
+      "impact": "Without improvement, warehouse and production staff continue wasting time reformatting documents and risk using cluttered paperwork on the floor.",
+      "scope": "First version: printable job card and packing slip from Tidy 3 with a simplified layout and core operational fields, using invoice layout conventions where sensible. Non-goals: full document designer, all historical Tidy 1 formatting options, and every possible assembly detail variant.",
+      "risks": "Undefined field requirements, print layout complexity, parity expectations with Tidy 1, dependency on Tidy 3 document rendering capabilities",
+      "questions": "What exact fields must appear on each document? Should users choose between detailed and simplified layouts? Is barcoding, batching, or signature capture required?",
+      "priority": "medium - operationally useful, but the requested output format still needs clearer specification",
+      "estimatedDevEffort": "6-9 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-16",
+      "estimateAssumptions": "Assumes Tidy 3 already has a document rendering path that can support new printable layouts and that requirements can be narrowed quickly.",
+      "evidence": [
+        "Customer asked: \"Can we get a job card and packing slip printed from Tidy 3 rather than Tidy 1\".",
+        "Customer said current job cards and packing slips have \"too much assembly information\".",
+        "Customer added the output is \"taking a long time to format so it can be printed off\"."
+      ],
+      "eli5Summary": "Print cleaner job cards and packing slips directly from Tidy 3 instead of fixing messy ones by hand.",
+      "customerPerspective": "Christine McMahon from Sunshade Group wants faster, cleaner production paperwork directly from Tidy 3.",
+      "sourceChatIds": [
+        "4593c05d-c00d-4237-a15a-56495616003f"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "27e39b2b-10f4-4464-912e-80805c37fd62",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Purchase Order Unit-of-Measure Visibility",
+      "executiveSummary": "Show unit of measure on the purchase order screen and printed PO so buyers and suppliers can see whether quantities are in metres, items, or another unit. This is especially important where supplier-facing documents currently mismatch internal expectations.",
+      "problem": "Sunshade Group issues POs in metres, but ECP-related purchase orders still appear in items and do not clearly show unit of measure.",
+      "impact": "Without this feature, purchasing teams and suppliers can misread order quantities, creating ordering errors, clarifications, and rework.",
+      "scope": "First version: display unit of measure on PO entry screens and printed POs, including ECP purchase order scenarios. Non-goals: full purchasing unit conversion logic, pricing recalculation redesign, or supplier integration overhaul.",
+      "risks": "ECP-specific data mapping, unit conversion edge cases, printed template space, inconsistent UOM storage across items",
+      "questions": "Where is the authoritative UOM stored today? Should both quantity and UOM be editable on the PO? Are there cases where ordered UOM differs from stocked UOM?",
+      "priority": "high - this affects order accuracy and supplier communication in a core purchasing workflow",
+      "estimatedDevEffort": "4-6 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-12",
+      "estimateAssumptions": "Assumes unit-of-measure data already exists per item/order line and the issue is primarily presentation rather than core purchasing logic.",
+      "evidence": [
+        "Customer requested \"Unit of measure showing on the purchase order screen and PO\".",
+        "Customer said: \"We are having issues with ECP purchase orders as it doesn't show unit of measure\".",
+        "Customer explained: \"we issue P/O in meters, but ECP show in items still\"."
+      ],
+      "eli5Summary": "Make purchase orders clearly show whether you are buying metres, items, or something else.",
+      "customerPerspective": "Christine McMahon from Sunshade Group wants purchase orders to reflect the real units her team orders from suppliers.",
+      "sourceChatIds": [
+        "c1a5bdd7-8821-450e-bbea-618d967dae8a"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "c4d27516-2f75-4ad6-b0f1-cf67e5c32ca1",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Sales Report with Invoice and Discount Detail",
+      "executiveSummary": "Create a sales report that includes invoice number, discount information, and optionally the linked Xero invoice number once the exact layout is confirmed. The first step is a tightly scoped specification pass based on a marked-up example.",
+      "problem": "Fresh Fodder Foods needs invoice-level sales reporting with discount visibility, but the required report structure and discount calculation rules are not yet fully defined.",
+      "impact": "Without this report, finance and sales teams must manually combine invoice and discount information, limiting visibility and adding reconciliation effort.",
+      "scope": "First version: custom sales report with invoice number, discount field(s), and Xero invoice reference if available and clearly defined. Non-goals: generic report builder, all accounting sync diagnostics, or a full reporting redesign.",
+      "risks": "Incomplete specification, ambiguous discount calculation rules, uncertain availability of Xero invoice identifier, custom report layout iteration",
+      "questions": "Which existing report should this extend? Should discount show as amount, percentage, or both? Which discount source is authoritative? Where is the Xero invoice number stored and when is it populated?",
+      "priority": "medium - useful reporting need, but requirements are not yet specific enough to commit to build without discovery",
+      "estimatedDevEffort": "4-7 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-13",
+      "estimateAssumptions": "Assumes the customer promptly supplies a mockup or marked-up example and that the Xero invoice number is already available in reportable data.",
+      "evidence": [
+        "Customer asked for a sales report that would list \"Invoice number and any discounts applied\".",
+        "Customer also asked how to include the \"Xero Invoice number\" as a field.",
+        "Support requested a \"mockup\" or marked-up example showing how the new fields should look and be calculated."
+      ],
+      "eli5Summary": "Build a sales report that shows each invoice and its discounts, once the customer confirms the exact layout.",
+      "customerPerspective": "Sam Chant from Fresh Fodder Foods wants clearer invoice-level sales reporting, including discounts and possibly Xero references.",
+      "sourceChatIds": [
+        "7f989c85-9339-44b3-a742-21cf7cbac5b1"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "1fdb4760-0042-456e-a4f3-0f44f4537a89",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Component List Item Details Shortcut",
+      "executiveSummary": "Add a direct way to view the details of a component item from an assembly component list without disrupting the current search/swap workflow. The safest first release is likely a new dedicated view-details action rather than changing existing icon behaviour globally.",
+      "problem": "Rozcraft expects the current magnifying glass on a specific component to show that item's details, but it instead opens a search/swap flow.",
+      "impact": "Without a clearer detail-view action, users waste time, get frustrated in a core assembly workflow, and may mistrust the UI's intent.",
+      "scope": "First version: add a dedicated item-details action from the component list while preserving the existing search/swap behaviour. Non-goals: global replacement of the current magnifying glass behaviour, broad component-list redesign, or search workflow removal.",
+      "risks": "Backward compatibility for existing users, UI space constraints, differing expectations across customers, duplicated actions causing confusion",
+      "questions": "Should this be a new icon, right-click action, or preference setting? What exact item details need to open? Does the current search/swap action also need relabelling for clarity?",
+      "priority": "medium - strong usability issue, but the ticket itself highlights meaningful risk in changing established behaviour for other customers",
+      "estimatedDevEffort": "3-5 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-10",
+      "estimateAssumptions": "Assumes a non-breaking additive UI change is acceptable and there is already an item-details view that can be opened from this context.",
+      "evidence": [
+        "Customer said: \"I wanted to see what material it is, not be given options.\"",
+        "Support explained the magnifying glass \"is actually a 'find/swap this component' button\".",
+        "Support also noted that changing it for one client could affect other users who are used to the current behaviour."
+      ],
+      "eli5Summary": "Give users a simple button to open the item they clicked on instead of sending them into search.",
+      "customerPerspective": "Roz Hunt from Rozcraft wants the assembly component list to let her inspect the exact item already on the assembly.",
+      "sourceChatIds": [
+        "a42d752c-9de5-4393-b8cf-ede09ee49f73"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "44f52171-19b6-4e55-be0e-5d2a3da94f68",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "Consistent Material Search Experience",
+      "executiveSummary": "Bring material-item search closer to assembly search so users can find items with the same level of capability and predictability across Tidy 1. This should focus on feature parity for the most important search behaviours first.",
+      "problem": "Sunshade Group reports that material-item search is inconsistent and less capable than assembly search, making items difficult to find.",
+      "impact": "Without better search consistency, users spend longer locating items, make avoidable mistakes, and experience Tidy as harder to use than necessary.",
+      "scope": "First version: align the highest-value search behaviours between material and assembly search, such as matching logic, fields searched, and result usability. Non-goals: a complete search engine rewrite or redesign of every lookup screen.",
+      "risks": "Unclear gap between current search modes, possible performance impact, UI differences between modules, dependency on legacy Tidy 1 search implementation",
+      "questions": "Which search capabilities exist in assembly search but not material search today? Are users asking for broader matching, more fields, better filters, or better ranking? Do attached examples show consistent reproducible cases?",
+      "priority": "high - findability is a foundational workflow and the customer explicitly says the current search is difficult to use",
+      "estimatedDevEffort": "5-8 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-14",
+      "estimateAssumptions": "Assumes the required parity gaps can be identified from the supplied examples and addressed without replacing the underlying search architecture.",
+      "evidence": [
+        "Customer said: \"Search function in Tidy 1 is not consistent and difficult to look up items.\"",
+        "Customer said: \"Material item search has less function than the assembly search.\"",
+        "Customer noted that examples were attached to illustrate the issue."
+      ],
+      "eli5Summary": "Make searching for materials work more like the better assembly search so people can find items faster.",
+      "customerPerspective": "Christine McMahon from Sunshade Group wants a more predictable way to find materials in everyday Tidy 1 workflows.",
+      "sourceChatIds": [
+        "7b19675c-ac5d-4b80-968f-289bfa9771f8"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "1342ebbd-ad93-4c4a-84fe-201c8628dfbe",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
+    },
+    {
+      "title": "OS14 On-Hold Project Inclusion Option",
+      "executiveSummary": "Add an option to include on-hold projects in the OS14 Project Milestone Summary. A simple filter or toggle would let customers keep using the report while broadening its visibility.",
+      "problem": "Groundwork East finds OS14 valuable but cannot currently include projects that are on hold.",
+      "impact": "Without this option, project oversight is incomplete and teams may miss delayed or paused work when reviewing milestone status.",
+      "scope": "First version: add an include/exclude on-hold projects option to OS14 and ensure output labels remain clear. Non-goals: full report redesign, new project states, or portfolio analytics tooling.",
+      "risks": "Definition of on-hold status, report filter side effects, customer expectations around default behaviour",
+      "questions": "Should on-hold projects be included by default or only via a toggle? How should on-hold status display in the report output? Are there other non-active statuses that should also be supported?",
+      "priority": "medium - likely a small change with clear value, but it appears limited to a report option rather than a platform-wide workflow gap",
+      "estimatedDevEffort": "1-3 developer-days",
+      "estimatedStartDate": "2026-08-04",
+      "estimatedCompletionDate": "2026-08-06",
+      "estimateAssumptions": "Assumes project status is already available to the OS14 report query and the change is limited to report filtering/output logic.",
+      "evidence": [
+        "Customer said: \"OS14 Project Milestone Summary, this report is proving invaluable to us.\"",
+        "Customer asked: \"Is it possible to include on hold projects also?\"",
+        "Support said the request may be a bespoke change and may incur a service charge."
+      ],
+      "eli5Summary": "Let the project summary report include paused projects too.",
+      "customerPerspective": "Jaclyn Bennett from Groundwork East wants the milestone report to reflect all relevant projects, including ones currently on hold.",
+      "sourceChatIds": [
+        "1dfab497-91db-4708-9d1b-b1570b3a48c0"
+      ],
+      "aiSource": "Claude Opus 4.6",
+      "id": "453681c8-e00e-4f69-ac65-94b64a612f05",
+      "status": "ready",
+      "author": "Claude Opus 4.6 draft",
+      "createdAt": "2026-07-31T01:57:06.277Z",
+      "updatedAt": "2026-07-31T01:57:06.277Z",
+      "history": [
+        {
+          "at": "2026-07-31T01:57:06.277Z",
+          "by": "Claude Opus 4.6",
+          "action": "created",
+          "status": "ready",
+          "comment": "Bulk-drafted from Feature-labelled ticket with indicative development estimate."
+        }
+      ]
     }
   ]
 }
