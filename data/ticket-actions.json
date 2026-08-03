@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-03T22:37:37.966Z",
+  "updatedAt": "2026-08-03T22:43:08.860Z",
   "decisions": {
     "b9ebbf0d-0638-4c8a-bb18-dafcbb560d2e": "close",
     "a13f09a2-99cf-4c13-965a-a0399ec34925": "close",
@@ -5649,6 +5649,17 @@
       "to": null,
       "success": true,
       "detail": ""
+    },
+    {
+      "id": "8a149291-c8a9-4b7f-8fcb-0cfeb66b4805",
+      "ticketId": "837c48d9-fb2a-4a72-9bc1-d7e325c66717",
+      "at": "2026-08-03T22:43:08.857Z",
+      "by": "Jack",
+      "action": "release_customer_responded",
+      "from": "needs_response",
+      "to": "responded",
+      "success": true,
+      "detail": "PR #2116 release follow-up."
     }
   ]
 }
