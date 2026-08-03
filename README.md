@@ -96,12 +96,17 @@ cd ~/Work/tidy-inbox-tool
 npm install
 ```
 
-**1. Tidy CRM token** — open https://crm.tidyint.com (logged in), Devtools → Application →
-Cookies → copy `TidyCore_AccessToken`:
+**1. Tidy CRM authentication** — open https://crm.tidyint.com (logged in), Devtools → Application →
+Cookies → copy `TidyCore_RefreshToken`:
 ```bash
-export TIDY_TOKEN='eyJ...'
+export TIDY_REFRESH_TOKEN='eyJ...'
 ```
-Expires; re-grab when you see a 401. Point at staging with `export TIDY_API=https://crm-gateway.tidystaging.com`.
+On first use the tool exchanges it for an access token, then saves each rotated refresh token in
+the gitignored `.tidy-auth.json` file with owner-only permissions. Later runs reuse that file, so the
+environment variable is only needed for initial setup. Point at staging with
+`export TIDY_API=https://crm-gateway.tidystaging.com` (the matching auth gateway is inferred), or
+set `TIDY_AUTH_API` explicitly. To replace an invalid saved login, paste a new refresh token through
+the dashboard's Token button (or delete `.tidy-auth.json` before setting the environment variable again).
 
 **2. AI backend** (summaries only) — pick one:
 - **Codex:** install/login to the Codex CLI; `summarize.mjs` auto-detects `codex exec`.
@@ -156,7 +161,7 @@ a `close-chats --ids --apply` line for whatever's ticked. The grouping comes fro
 
 **Web app** — everything in one place, no copy-paste:
 ```bash
-export TIDY_TOKEN='...'   # needed for the Sync/Close buttons
+export TIDY_REFRESH_TOKEN='...'  # first run only; or paste it via the Token button
 npm run serve             # then open http://localhost:8787
 ```
 A local dashboard over the same data files. Five main tabs:
@@ -228,7 +233,7 @@ Mine resolved threads — including closed ones — into a searchable Q&A knowle
 answering common questions fast.
 
 ```bash
-node build-kb.mjs --fetch    # pull ALL chats incl. closed -> data/all-chats.json (needs TIDY_TOKEN)
+node build-kb.mjs --fetch    # pull ALL chats incl. closed -> data/all-chats.json (needs CRM authentication)
 node build-kb.mjs            # distil -> data/knowledge.json (uses the same AI provider)
                              #   …or ask Codex/another agent to "build the knowledge base"
                              #   (it follows KB-TASK.md over data/kb-digests.json)

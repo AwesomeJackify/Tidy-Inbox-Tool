@@ -1,4 +1,5 @@
 node_modules/
+.tidy-auth.json
 
 # generated CRM data + outputs (rebuildable from the CRM)
 data/*

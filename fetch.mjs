@@ -1,7 +1,7 @@
 // Fetch every chat + all its messages from the Tidy CRM and save to data/inbox.json.
 //
 // Usage:
-//   export TIDY_TOKEN='<TidyCore_AccessToken cookie value>'
+//   export TIDY_REFRESH_TOKEN='<TidyCore_RefreshToken cookie value>'
 //   node fetch.mjs                 # all open and closed chats
 //   node fetch.mjs --open-only     # smaller open-ticket snapshot
 

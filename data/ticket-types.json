@@ -1,21 +1,4 @@
 {
-  "updatedAt": "2026-07-27T04:36:39.573Z",
-  "types": {
-    "3032d979-1719-488c-bfde-b1afe66a4935": "bug",
-    "51cbd0d5-6152-4329-9e5a-34e2d5b55177": "not sure",
-    "e5ccf2b9-b4a3-4fcf-a11c-3449a4d4c6c8": "not sure",
-    "1dfab497-91db-4708-9d1b-b1570b3a48c0": "feature",
-    "f61fa91d-5fd5-4524-93e6-fb67799f70b4": "bug",
-    "b8eb4d8b-7ea9-48ea-a249-58ee911a0f86": "bug",
-    "f4579d03-7505-486a-ada1-db98f16d7715": "bug",
-    "7b19675c-ac5d-4b80-968f-289bfa9771f8": "feature",
-    "95c06515-7ae9-42b5-99bc-c7a54401bcc7": "bug",
-    "6bedbe21-ad97-4da0-9b40-e2b36b94d0bb": "bug",
-    "0a970617-46a7-4103-ba14-d0c702ad0f9e": "bug",
-    "b1daf9bd-4459-4739-88f4-71ebec37d41a": "bug",
-    "8268ac32-e165-4e58-8055-0f33cc315a09": "bug",
-    "b05c2402-383d-4070-9ad7-e1fb7f863f55": "bug",
-    "7120d529-17d2-4f48-8ae9-30ea981d44cc": "not sure",
-    "073f27ec-aa2e-42aa-8cd8-e9b7bc9c7a52": "not sure"
-  }
+  "updatedAt": "2026-08-03T22:37:37.959Z",
+  "types": {}
 }

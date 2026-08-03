@@ -1,7 +1,7 @@
 // Build a searchable Q&A knowledge base from ALL tickets (including closed ones).
 //
 // Flow:
-//   node build-kb.mjs --fetch      # pull ALL chats incl. closed -> data/all-chats.json (needs TIDY_TOKEN)
+//   node build-kb.mjs --fetch      # pull ALL chats incl. closed (needs CRM authentication)
 //   node build-kb.mjs              # distill the corpus -> data/knowledge.json
 //
 // Corpus source: data/all-chats.json if present (the full incl-closed pull), else
@@ -78,7 +78,7 @@ if (FETCH) {
 
 const corpusFile = fs.existsSync(ALL) ? ALL : fs.existsSync(INBOX) ? INBOX : null;
 if (!corpusFile) {
-    console.error("No corpus. Run `node build-kb.mjs --fetch` (needs TIDY_TOKEN) or `node fetch.mjs` first.");
+    console.error("No corpus. Run `node build-kb.mjs --fetch` (needs CRM authentication) or `node fetch.mjs` first.");
     process.exit(1);
 }
 const corpus = JSON.parse(fs.readFileSync(corpusFile, "utf8"));

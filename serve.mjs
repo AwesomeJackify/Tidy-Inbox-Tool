@@ -1,6 +1,6 @@
 // Local web app that ties the whole tool together — a personal CRM ticket manager.
 //
-//   export TIDY_TOKEN=...      (needed for sync / close actions)
+//   export TIDY_REFRESH_TOKEN=...  (one-time setup for sync / close actions)
 //   node serve.mjs             then open http://localhost:8787
 //
 // It serves a dashboard over the existing data files and exposes the pipeline
@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeChat, reopenChat, mapLimit, setToken, hasToken, verifyToken } from "./lib/api.mjs";
+import { closeChat, reopenChat, mapLimit, setToken, setRefreshToken, hasToken, hasRefreshToken, verifyToken } from "./lib/api.mjs";
 import { detectAiBackend } from "./lib/ai-backend.mjs";
 import { runAiJson } from "./lib/ai-json.mjs";
 import { backupFile } from "./lib/backup.mjs";
@@ -38,9 +38,10 @@ let tokenRejected = false;
 let tokenVerifiedAt = null;
 
 function crmTokenStatus() {
-    if (!currentToken) return { available: false, state: "missing", verifiedAt: null, reason: "No CRM token is set." };
+    if (!hasToken()) return { available: false, state: "missing", verifiedAt: null, reason: "No CRM refresh token or access token is set." };
     if (tokenRejected) return { available: false, state: "expired", verifiedAt: tokenVerifiedAt, reason: "The CRM rejected this token. It has probably expired." };
     try {
+        if (hasRefreshToken() || !currentToken) return { available: true, state: tokenVerifiedAt ? "verified" : "unverified", verifiedAt: tokenVerifiedAt, reason: tokenVerifiedAt ? null : "Authentication will be verified and refreshed automatically." };
         const parts = currentToken.split(".");
         if (parts.length === 3) {
             const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
@@ -378,7 +379,7 @@ const server = http.createServer(async (req, res) => {
             const followups = store.followups.filter((item) => (item.releaseName || "Uncategorised") === name);
             if (!name || !followups.length) return json(res, 404, { ok: false, error: "Release not found." });
             const crm = crmTokenStatus();
-            if (!hasToken() || !crm.available) return json(res, 400, { ok: false, authFailed: true, error: crm.reason || "No CRM token is set." });
+            if (!hasToken() || !crm.available) return json(res, 400, { ok: false, authFailed: true, error: crm.reason || "No CRM authentication is configured." });
             const inbox = fs.existsSync(dataFile("inbox.json")) ? JSON.parse(fs.readFileSync(dataFile("inbox.json"), "utf8")) : { chats: [] };
             const chats = new Map((inbox.chats || []).map((chat) => [chat.id, chat]));
             const ticketIds = [...new Set(followups.flatMap((item) => (item.tickets || []).map((ticket) => ticket.ticketId)))];
@@ -545,11 +546,11 @@ const server = http.createServer(async (req, res) => {
             return json(res, 200, { ok: true, decision, event });
         }
         if (req.method === "POST" && url.pathname === "/api/token") {
-            const { token } = await body(req);
+            const { token, refreshToken } = await body(req);
             currentToken = (token ?? "").trim() || undefined;
             tokenRejected = false;
             tokenVerifiedAt = null;
-            const ok = setToken(currentToken);
+            const ok = refreshToken !== undefined ? setRefreshToken(refreshToken) : setToken(currentToken);
             const crm = ok ? await checkCrmToken() : crmTokenStatus();
             return json(res, 200, { ok: ok && crm.state === "verified", hasToken: ok, ...crm });
         }
@@ -561,7 +562,7 @@ const server = http.createServer(async (req, res) => {
             if (!Array.isArray(ids) || ids.length === 0) return json(res, 400, { error: "no ids" });
             const crm = crmTokenStatus();
             if (!hasToken() || !crm.available) {
-                const error = crm.reason || "No CRM token set — paste one via the ⚿ Token button.";
+                const error = crm.reason || "No CRM authentication set — paste a refresh token via the ⚿ Token button.";
                 const actions = readTicketActions();
                 for (const id of ids) actions.events.push(auditEvent({ ticketId: id, action: "crm_close_failed", by, success: false, detail: error }));
                 writeTicketActions(actions);
@@ -591,7 +592,7 @@ const server = http.createServer(async (req, res) => {
             if (!Array.isArray(ids) || ids.length === 0) return json(res, 400, { error: "no ids" });
             const crm = crmTokenStatus();
             if (!hasToken() || !crm.available) {
-                const error = crm.reason || "No CRM token set — paste one via the ⚿ Token button.";
+                const error = crm.reason || "No CRM authentication set — paste a refresh token via the ⚿ Token button.";
                 const actions = readTicketActions();
                 for (const id of ids) actions.events.push(auditEvent({ ticketId: id, action: "crm_reopen_failed", by, success: false, detail: error }));
                 writeTicketActions(actions);
@@ -671,7 +672,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
     console.error(`Tidy inbox app running at http://localhost:${PORT}`);
-    if (!process.env.TIDY_TOKEN) console.error("(No TIDY_TOKEN set — viewing works; paste one via the ⚿ Token button in the app to enable Sync/Close, no restart needed.)");
+    if (!hasToken()) console.error("(No CRM authentication set — viewing works; paste a refresh token via the ⚿ Token button to enable Sync/Close.)");
 });
 
 const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><title>Tidy Inbox</title>
@@ -845,7 +846,7 @@ function paintTokenStatus(checking=false){
   const dot=document.getElementById('tokdot'),text=document.getElementById('toktext'),button=document.getElementById('tokenButton');if(!dot||!text||!button)return;
   const state=checking?'checking':(DATA.crmState||(!DATA.hasToken?'missing':'unverified'));
   const styles={verified:'bg-success',expired:'bg-error',missing:'bg-error',checking:'bg-warning',unverified:'bg-warning',unknown:'bg-warning'};
-  const labels={verified:'Token valid',expired:'Token expired',missing:'No CRM token',checking:'Checking token…',unverified:'Token unchecked',unknown:'Check failed'};
+  const labels={verified:'CRM connected',expired:'Login expired',missing:'CRM disconnected',checking:'Checking CRM…',unverified:'CRM unchecked',unknown:'Check failed'};
   const seconds=checking&&TOKEN_CHECK_DEADLINE?Math.max(0,Math.ceil((TOKEN_CHECK_DEADLINE-Date.now())/1000)):null;
   dot.className='inline-block w-2 h-2 rounded-full mr-1 '+(styles[state]||'bg-warning');text.textContent=checking?'Checking token · '+seconds+'s':(labels[state]||'Token status unknown');
   const checked=DATA.crmVerifiedAt?' Last verified '+new Date(DATA.crmVerifiedAt).toLocaleTimeString()+'.':'';button.title=(DATA.crmReason||labels[state])+checked+' Click to update the token.';
@@ -869,15 +870,15 @@ function updateSyncState(){
   button.title=DATA.crmAvailable?'Pull the latest CRM changes':(DATA.crmReason||'CRM access is unavailable')+' Click to learn how to fix it.';
 }
 function syncNow(){
-  if(!DATA.crmAvailable) return alert((DATA.crmReason||'CRM access is unavailable')+'\\n\\nUse the Token button to paste a fresh CRM access token.');
+  if(!DATA.crmAvailable) return alert((DATA.crmReason||'CRM access is unavailable')+'\\n\\nUse the Token button to paste your CRM refresh token.');
   return run('sync');
 }
 async function updateToken(){
-  const t=prompt('Paste a fresh CRM access token\\n(crm.tidyint.com → Devtools → Application → Cookies → TidyCore_AccessToken):');
+  const t=prompt('Paste your CRM refresh token\\n(crm.tidyint.com → Devtools → Application → Cookies → TidyCore_RefreshToken):');
   if(t===null) return;
-  const r=await (await fetch('/api/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:t})})).json();
+  const r=await (await fetch('/api/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({refreshToken:t})})).json();
   await load();
-  alert(r.state==='verified'?'Token verified — Sync and Close are ready.':(r.reason||'Token cleared.'));
+  alert(r.state==='verified'?'Authentication verified — future access tokens will refresh automatically.':(r.reason||'Token cleared.'));
 }
 function tab(t){ TAB=t; document.querySelectorAll('[role=tab]').forEach(d=>d.classList.toggle('tab-active',d.dataset.tab===t)); render(); }
 function render(){
@@ -1391,7 +1392,7 @@ async function closeDecided(){
 async function reopenTicket(id){
   const chat=DATA.chats.find(c=>c.id===id);
   if(!chat||chat.status!=='closed')return alert('This ticket is not currently marked closed. Run Sync if the CRM changed recently.');
-  if(!DATA.crmAvailable)return alert((DATA.crmReason||'CRM access is unavailable')+'\\n\\nUse the Token button to paste a fresh CRM access token.');
+  if(!DATA.crmAvailable)return alert((DATA.crmReason||'CRM access is unavailable')+'\\n\\nUse the Token button to paste your CRM refresh token.');
   if(!confirm('Reopen '+(chat.code||chat.title||'this ticket')+' in the CRM?'))return;
   const message=document.getElementById('fmsg');if(message)message.textContent='reopening…';
   const result=await (await fetch('/api/reopen',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids:[id],by:auditActor()})})).json();
@@ -1407,7 +1408,7 @@ async function run(name,quiet){
   const log=document.getElementById('log'); document.getElementById('logpanel').classList.remove('hidden'); log.textContent+='\\n$ '+name+' …\\n';
   const r=await (await fetch('/api/run/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({by:auditActor()})})).json();
   log.textContent+=(r.output||r.error||'').trim()+'\\n'; log.scrollTop=log.scrollHeight;
-  if(r.authFailed){ await load(); alert((r.error||'The CRM rejected the token.')+'\\n\\nUse the Token button to paste a fresh CRM access token.'); return; }
+  if(r.authFailed){ await load(); alert((r.error||'CRM authentication could not be renewed.')+'\\n\\nUse the Token button to paste your CRM refresh token.'); return; }
   if(!quiet) await load();
 }
 async function exportExcel(){

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-07-31T01:58:54.080Z",
+  "updatedAt": "2026-08-03T22:37:37.966Z",
   "decisions": {
     "b9ebbf0d-0638-4c8a-bb18-dafcbb560d2e": "close",
     "a13f09a2-99cf-4c13-965a-a0399ec34925": "close",
@@ -5587,6 +5587,68 @@
       "to": null,
       "success": true,
       "detail": "Boss review Markdown exported and opened."
+    },
+    {
+      "id": "3b6978c3-3dad-4e23-8ff0-07e8810c0493",
+      "at": "2026-08-03T21:46:44.463Z",
+      "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "840a22f5-73f6-40e6-a3ff-5f2c4280d8ce",
+      "at": "2026-08-03T22:32:08.269Z",
+      "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "cd26c271-7721-4970-853d-7dc12cb7bd2e",
+      "ticketId": "f90e8a00-531d-466d-b06a-edaa602dc47a",
+      "at": "2026-08-03T22:33:59.153Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "close",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "ce58b2ba-3a81-4854-8f8c-8a9a00d86c69",
+      "ticketId": "f90e8a00-531d-466d-b06a-edaa602dc47a",
+      "at": "2026-08-03T22:34:02.224Z",
+      "by": "Jack",
+      "action": "crm_closed",
+      "from": null,
+      "to": "closed",
+      "success": true,
+      "detail": "Closed through POST /v1/chats/{id}/close"
+    },
+    {
+      "id": "cb7770e6-2de3-4cd7-ac3a-81198263609f",
+      "at": "2026-08-03T22:34:11.377Z",
+      "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "aaca1210-fb3e-4216-8b8b-0ff43e973798",
+      "at": "2026-08-03T22:37:37.965Z",
+      "by": "Jack",
+      "action": "summarize_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
     }
   ]
 }

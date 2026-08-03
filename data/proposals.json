@@ -322,25 +322,28 @@
       "customerPerspective": "Rosalind Hunt from Rozcraft Limited wants to insert and reorder lines so documents can follow the same order as the forms they come from and similar component lists can be compared easily. New lines currently go to the bottom, and the keyboard reordering method did not work for her on Windows 11 with Edge."
     },
     {
-      "title": "Surface customer payment terms and default branding on new quotes and sales",
-      "executiveSummary": "When a customer is selected on a new quote or sale, show the customer’s stored payment terms and initialize the branding selection from the relevant customer configuration so staff do not have to inspect the customer record separately.",
-      "problem": "The New Sale workflow does not show the customer’s payment terms. Staff must leave the workflow, open Customers, navigate to Edit and Sales, and check the terms before choosing branding intended to display the correct terms.",
-      "impact": "Every new quote or sale requires extra navigation and manual cross-checking, increasing processing time and the chance of choosing branding that does not reflect the customer’s terms.",
-      "scope": "When a customer is selected on a new quote or sale, display the customer’s stored payment terms and initialize branding from an existing customer-specific branding setting when one is available. Preserve an intentional user selection if the customer has not changed, and leave branding unset when no customer configuration exists. The first version will not infer branding from payment-terms text or change due-date calculations.",
-      "risks": "Payment terms and branding may be stored in different systems or formats.,Quotes and sales may not share the same initialization path.,Automatically applying a branding value could overwrite an intentional draft selection when the customer changes.,Xero synchronization timing may affect available branding values.",
-      "questions": "Which stored customer field is the authoritative payment-terms value?,Is a customer-specific branding theme already stored, or is staff currently deriving the theme manually from the terms?,Should payment terms be informational only on quotes, or should existing due-date behavior also be exposed?,What should happen when the customer has no configured branding theme?",
-      "priority": "Medium — staff perform the extra lookup for every new quote, but the authoritative branding configuration and overall transaction volume are not established",
+      "title": "Display and permission-control customer payment terms on quotes and sales",
+      "executiveSummary": "VacMotion Ltd wants the customer-specific invoice due date/payment terms shown as soon as a customer is selected while creating or editing a quote or sale. The proposed first version will expose the resolved terms in the sale header and allow authorised users to adjust them under existing or new permission controls. This removes the repeated trip to Customers > Edit > Sales and lets the salesperson confirm the terms during the customer conversation. Automatic selection of a Xero branding theme should remain a separately scoped option until Peter confirms the data ownership and integration constraints.",
+      "problem": "The quote and sale workflow does not show the selected customer’s invoice due date/payment terms. Staff must leave the transaction, open Customers, navigate to Edit and Sales, and check the terms before continuing or choosing the Xero branding theme that carries the matching wording.",
+      "impact": "VacMotion reports performing this lookup for every new quote or sale. The repeated navigation wastes sales time and creates a risk that the salesperson selects branding or discusses payment expectations without seeing the customer’s actual terms.",
+      "scope": "Display the selected customer’s resolved invoice due date/payment terms in the quote and sale header, with permission-controlled editing where the product rules allow it. The first version should load the customer override or default when the customer is selected, refresh it safely when the customer changes, preserve authorised intentional edits, and cover create/edit flows with regression tests. Automatic Xero branding-theme selection, a broader Customer Group policy model, changes to invoice due-date calculation rules, and bulk updates to customer records are not included.",
+      "risks": "The authoritative value may be a resolved due date rather than free-text payment terms.,Quotes and sales may use different header or due-date logic.,Permission rules for overriding terms may not yet exist at the required level.,Changing the selected customer could overwrite an intentional edit unless state transitions are defined.,Xero branding data has external ownership and synchronization constraints.",
+      "questions": "Should the header show a calculated due date, the underlying rule such as 30 days, or both?,Which roles may edit the terms and should overrides be audited?,Should an edited quote or sale retain its saved override when the customer record later changes?,Do quote and sale creation share the same due-date resolution logic?,Should automatic Xero branding-theme selection be quoted as a separate phase after technical discovery?",
+      "priority": "Medium — the issue affects every new quote or sale for this customer and has a clear efficiency benefit, but it is not blocking transactions and the editable behavior needs product and permission decisions",
       "estimatedDevEffort": "6-10 developer-days",
-      "estimatedStartDate": "2026-07-27",
-      "estimatedCompletionDate": "2026-08-07",
-      "estimateAssumptions": "This is an independent scenario assuming approval and one developer’s capacity are available from 2026-07-27; it is not a promise or portfolio schedule.,Technical unknowns include the authoritative payment-terms field, how customer branding is stored, Xero synchronization behavior, and differences between quote and sale creation.,The estimate includes implementation, automated and manual testing, regression testing when customers change, review, and validation of missing or default configurations.,Product decisions about terms-to-branding behavior, access to representative customer configurations, and Xero dependencies could move the dates.",
+      "estimatedStartDate": "2026-08-10",
+      "estimatedCompletionDate": "2026-08-21",
+      "estimateAssumptions": "This is an independent planning scenario assuming customer approval, confirmed scope, and one developer’s capacity are available from 2026-08-10; it is not a delivery commitment or portfolio schedule.,The 6-10 developer-day estimate covers the visible and permission-controlled editable options in quote and sale create/edit flows, including implementation, automated and manual testing, regression testing when the customer changes, review, and release preparation.,Technical unknowns include the authoritative due-date/payment-terms model, whether quotes and sales share the same resolution path, the available permission framework, and override persistence rules.,Automatic Xero branding-theme selection is excluded and would require separate discovery and estimation; product decisions, representative test data, review availability, and integration dependencies could move the dates.",
       "evidence": [
         "The request was raised internally on behalf of VacMotion Ltd.",
         "The customer uses terms on Xero invoices and statements.",
         "The New Sale screen does not show the customer’s payment terms.",
         "The customer currently checks Customers, Edit, then Sales.",
         "The customer reports doing this for every new quote.",
-        "The branding selection is intended to reflect the customer’s payment terms."
+        "The branding selection is intended to reflect the customer’s payment terms.",
+        "Peter identified the relevant value as the invoice due date and said it should be visible to the salesperson.",
+        "Peter also identified permission-controlled editing as a possible option.",
+        "Peter noted automatic branding selection has external considerations because the data originates from Xero."
       ],
       "sourceChatIds": [
         "d031f01a-0d30-49e4-b974-53e5bd293b7e"
@@ -350,7 +353,7 @@
       "status": "ready",
       "author": "Codex draft",
       "createdAt": "2026-07-19T05:15:57.204Z",
-      "updatedAt": "2026-07-20T05:25:46.576Z",
+      "updatedAt": "2026-08-04T00:00:00.000Z",
       "history": [
         {
           "at": "2026-07-19T05:15:57.204Z",
@@ -372,10 +375,17 @@
           "action": "summary added",
           "status": "ready",
           "comment": "Added simple summary and grounded customer perspective; status unchanged."
+        },
+        {
+          "at": "2026-08-04T00:00:00.000Z",
+          "by": "Codex",
+          "action": "proposal refined",
+          "status": "ready",
+          "comment": "Aligned scope with Peter's CRM notes: visible due date/payment terms plus permission-controlled editing; moved automatic Xero branding selection out of the first version."
         }
       ],
-      "eli5Summary": "Show a customer's payment terms while making a quote or sale. Automatically choose the matching branding when possible.",
-      "customerPerspective": "The customer at VacMotion Ltd cannot see a customer's payment terms on the New Sale screen. They want the terms displayed there because they currently have to open the customer record for every new quote or sale to check which branding matches those terms."
+      "eli5Summary": "Show a customer’s payment terms while a quote or sale is being prepared, and let authorised staff adjust them without opening the customer record.",
+      "customerPerspective": "VacMotion Ltd wants its salesperson to see the selected customer’s payment terms while creating a quote or sale, so they can discuss the terms and choose the appropriate invoice branding without repeatedly opening the customer record. They would also like authorised staff to be able to adjust the terms when needed."
     },
     {
       "title": "Add website text to Rozcraft quote and invoice cover letters",
