@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-11T22:49:29.255Z",
+  "updatedAt": "2026-08-11T23:46:11.175Z",
   "decisions": {
     "b9ebbf0d-0638-4c8a-bb18-dafcbb560d2e": "close",
     "a13f09a2-99cf-4c13-965a-a0399ec34925": "close",
@@ -187,12 +187,11 @@
     "aa60f93b-a879-4db7-82f0-2e5d37fc1c98": "keep",
     "33e10b6a-9fe7-407e-843d-3daf9d057b72": "keep",
     "134ba313-3eea-4a46-bcbc-b1b82358cd05": "keep",
-    "812833fc-164d-43cc-b818-b3052a3eb63e": "keep",
-    "d6fbe153-f0c2-40ec-858c-7110d1d91c8a": "keep",
+    "62d1434f-9155-46bb-aa77-c464e227e3ae": "keep",
     "f317d8fb-2eb4-4833-ae19-52a9e00c0db6": "keep",
-    "4ac02f7d-4b25-4721-ab08-0d2f7bf532bf": "keep",
+    "812833fc-164d-43cc-b818-b3052a3eb63e": "keep",
     "76c4508e-e187-464c-b0de-a96f4107c665": "keep",
-    "62d1434f-9155-46bb-aa77-c464e227e3ae": "keep"
+    "4ac02f7d-4b25-4721-ab08-0d2f7bf532bf": "keep"
   },
   "events": [
     {
@@ -7414,6 +7413,166 @@
       "id": "cc7c3ea2-7232-4021-9537-bc3c17bb90d2",
       "at": "2026-08-11T22:49:29.253Z",
       "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "e31679ed-6aaa-4977-8075-2a4016924351",
+      "ticketId": "4ac02f7d-4b25-4721-ab08-0d2f7bf532bf",
+      "at": "2026-08-11T23:15:16.038Z",
+      "by": "Jack",
+      "action": "manual_type_changed",
+      "from": null,
+      "to": "feature",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "3ce7f801-be07-4043-99a0-a54bf07f66f6",
+      "ticketId": "4ac02f7d-4b25-4721-ab08-0d2f7bf532bf",
+      "at": "2026-08-11T23:15:56.377Z",
+      "by": "Jack",
+      "action": "manual_type_changed",
+      "from": "feature",
+      "to": "not sure",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "84c56531-2b00-47fb-85c9-3761d5b5c39f",
+      "ticketId": "096636a4-1783-435b-a604-4dd32dde606d",
+      "at": "2026-08-11T23:24:04.586Z",
+      "by": "Jack",
+      "action": "ticket_triage_generated",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": "AI triage generated."
+    },
+    {
+      "id": "9d58b7e5-1f54-49d0-bf3e-d88ef71f4ccb",
+      "ticketId": "0eaec844-f8f3-4495-a827-0466aa8b50f9",
+      "at": "2026-08-11T23:28:31.333Z",
+      "by": "Jack",
+      "action": "ticket_triage_generated",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": "AI triage generated."
+    },
+    {
+      "id": "f0571c04-3c26-410f-8b97-5cc78fdb4fbd",
+      "at": "2026-08-11T23:28:58.357Z",
+      "by": "Jack",
+      "action": "summarize_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "2d474fed-f99c-42a1-898b-4fdc86a8a339",
+      "at": "2026-08-11T23:33:02.640Z",
+      "by": "Jack",
+      "action": "summarize_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "31363a18-041a-4dd2-b359-b2fa4583e7cc",
+      "at": "2026-08-11T23:33:36.717Z",
+      "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "067241a3-4fa5-4eab-b187-31de84ba2431",
+      "ticketId": "f317d8fb-2eb4-4833-ae19-52a9e00c0db6",
+      "at": "2026-08-11T23:34:55.053Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "keep",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "5fd03df9-3b22-495b-9f82-fdf92df756bf",
+      "ticketId": "d6fbe153-f0c2-40ec-858c-7110d1d91c8a",
+      "at": "2026-08-11T23:34:55.220Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "close",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "d028c126-6791-40bd-bdf3-d7a15b10a4da",
+      "ticketId": "812833fc-164d-43cc-b818-b3052a3eb63e",
+      "at": "2026-08-11T23:34:55.344Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "keep",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "c84df880-a268-4213-8c60-1cd3aae7d3ee",
+      "ticketId": "76c4508e-e187-464c-b0de-a96f4107c665",
+      "at": "2026-08-11T23:34:55.468Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "keep",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "1918a3a5-2734-4ee1-b673-963abaf77fb3",
+      "ticketId": "4ac02f7d-4b25-4721-ab08-0d2f7bf532bf",
+      "at": "2026-08-11T23:34:55.610Z",
+      "by": "Jack",
+      "action": "status_changed",
+      "from": null,
+      "to": "keep",
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "1705befc-4049-498b-9583-4064718c9a88",
+      "ticketId": "d6fbe153-f0c2-40ec-858c-7110d1d91c8a",
+      "at": "2026-08-11T23:35:03.602Z",
+      "by": "Jack",
+      "action": "crm_closed",
+      "from": null,
+      "to": "closed",
+      "success": true,
+      "detail": "Closed through POST /v1/chats/{id}/close"
+    },
+    {
+      "id": "268d0c39-87d3-4988-824f-9bd4ead78153",
+      "at": "2026-08-11T23:35:15.938Z",
+      "by": "Jack",
+      "action": "sync_completed",
+      "from": null,
+      "to": null,
+      "success": true,
+      "detail": ""
+    },
+    {
+      "id": "027013bc-3a60-41bd-98e5-982b8d88a174",
+      "at": "2026-08-11T23:46:11.172Z",
+      "by": "Codex verification",
       "action": "sync_completed",
       "from": null,
       "to": null,

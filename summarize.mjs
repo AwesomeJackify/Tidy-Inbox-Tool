@@ -224,7 +224,10 @@ function summarizeViaCodex(chat) {
 
 function summarizeViaCustom(chat) {
     const command = process.env.TIDY_AI_COMMAND;
-    const args = parseCustomArgs(process.env.TIDY_AI_ARGS).map((arg) => arg.replaceAll("{model}", MODEL || ""));
+    const fallbackArgs = process.env.TIDY_AI_NAME === "GitHub Copilot"
+        ? [path.join(process.env.APPDATA || "", "npm", "node_modules", "@github", "copilot", "npm-loader.js"), "-s", "--no-ask-user"]
+        : [];
+    const args = parseCustomArgs(process.env.TIDY_AI_ARGS, fallbackArgs).map((arg) => arg.replaceAll("{model}", MODEL || ""));
     return runAiCommand(command, args, buildPrompt(chat), process.env.TIDY_AI_NAME || "Custom AI");
 }
 

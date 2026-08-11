@@ -16,7 +16,7 @@ import { closeChat, reopenChat, mapLimit, setToken, setRefreshToken, hasToken, h
 import { detectAiBackend } from "./lib/ai-backend.mjs";
 import { runAiJson } from "./lib/ai-json.mjs";
 import { backupFile } from "./lib/backup.mjs";
-import { isKnownTidyStaff } from "./lib/map.mjs";
+import { isKnownTidyStaff, isTidyStaffMessage } from "./lib/map.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dataFile = (f) => path.join(here, "data", f);
@@ -52,6 +52,13 @@ const triageRunningTicketIds = new Set();
 let triageRunning = false;
 let triageLastStartedAt = null;
 const triageStartedAt = [];
+// Kept in memory because these are short-lived local commands. The browser polls
+// this while a command is running so staff can see real script output immediately.
+const scriptProgress = new Map();
+
+function setScriptProgress(name, patch) {
+    scriptProgress.set(name, { name, updatedAt: new Date().toISOString(), ...scriptProgress.get(name), ...patch });
+}
 
 function crmTokenStatus() {
     if (!hasToken()) return { available: false, state: "missing", verifiedAt: null, reason: "No CRM refresh token or access token is set." };
@@ -118,7 +125,7 @@ function staffDetector(chats) {
     return (sender) => (senderParties.get(sender)?.size ?? 0) >= 3;
 }
 
-function readData() {
+function readData({ includeConversationSearch = false } = {}) {
     const inbox = fs.existsSync(dataFile("inbox.json")) ? JSON.parse(fs.readFileSync(dataFile("inbox.json"), "utf8")) : { chats: [] };
     const enrichedChats = fs.existsSync(dataFile("enriched.json")) ? JSON.parse(fs.readFileSync(dataFile("enriched.json"), "utf8")).chats : [];
     const previousById = new Map(enrichedChats.map((chat) => [chat.id, chat]));
@@ -154,8 +161,17 @@ function readData() {
 
     const chats = inbox.chats.map((c) => {
         const messages = c.messages ?? [];
-        const latestMessage = messages.filter((m) => !m.isNote).at(-1);
-        const firstMessage = messages.find((m) => !m.isNote && !isStaff(m.sender)) ?? messages.find((m) => !m.isNote);
+        const visibleMessages = [], searchParts = includeConversationSearch ? [] : null;
+        let latestMessage = null, firstMessage = null, firstNonNote = null;
+        for (const message of messages) {
+            if (searchParts) searchParts.push(`${message.sender || ""} ${message.text || ""}`);
+            if (message.isNote) continue;
+            visibleMessages.push(message);
+            latestMessage = message;
+            if (!firstNonNote) firstNonNote = message;
+            if (!firstMessage && !isStaff(message.sender)) firstMessage = message;
+        }
+        firstMessage ||= firstNonNote;
         const appAction = latestAction.get(c.id) ?? null;
         const crmLast = c.mostRecentMessageDate ?? null;
         const actionIsLatest = appAction && (!crmLast || new Date(appAction.at) > new Date(crmLast));
@@ -170,10 +186,11 @@ function readData() {
         activityLast: actionIsLatest ? appAction.at : crmLast,
         activitySource: actionIsLatest ? "app" : "crm",
         latestAction: appAction,
+        decision: actionStore.decisions[c.id] ?? null,
         // Also apply the sender gate to already-synced data. This removes old
         // false positives immediately; the next Sync also re-evaluates the
         // customer-reader condition in lib/map.mjs.
-        leftOnRead: Boolean(c.leftOnRead && latestMessage && isKnownTidyStaff(latestMessage.sender)),
+        leftOnRead: Boolean(c.leftOnRead && latestMessage && isTidyStaffMessage(latestMessage)),
         status: c.deleted ? "deleted" : c.closedDate ? "closed" : "open",
         msgs: c.messages?.length ?? 0,
         url: c.url,
@@ -185,12 +202,8 @@ function readData() {
             ? { sender: firstMessage.sender, date: firstMessage.date, text: (firstMessage.text || "").slice(0, 900), staff: isStaff(firstMessage.sender) }
             : null,
         // recent messages; staff tagged server-side (see isStaff above)
-        tail: messages.filter((m) => !m.isNote).slice(-8).map((m) => ({ sender: m.sender, date: m.date, text: (m.text || "").slice(0, 900), staff: isStaff(m.sender) })),
-        conversationSearch: messages
-            .map((message) => `${message.sender || ""} ${message.text || ""}`)
-            .join(" ")
-            .replace(/\s+/g, " ")
-            .trim(),
+        tail: visibleMessages.slice(-8).map((m) => ({ sender: m.sender, date: m.date, text: (m.text || "").slice(0, 900), staff: isStaff(m.sender) })),
+        ...(includeConversationSearch ? { conversationSearch: searchParts.join(" ").replace(/\s+/g, " ").trim() } : {}),
     };
     });
     const ai = summarizationStatus();
@@ -206,7 +219,8 @@ function readData() {
     }).length;
     const summarizeRetryAt = summarizeLastStartedAt ? new Date(new Date(summarizeLastStartedAt).getTime() + SUMMARIZE_COOLDOWN_MS).toISOString() : null;
     const triageRate = triageRateStatus();
-    return { syncedAt: inbox.syncedAt ?? inbox.fetchedAt ?? null, hasToken: hasToken(), crmAvailable: crm.available, crmState: crm.state, crmVerifiedAt: crm.verifiedAt, crmReason: crm.reason, aiAvailable: ai.available, aiSource: ai.source, aiUsage: aiUsageStatus(), triages, summarizeAiTickets, summarizeRunning, summarizeRetryAt, summarizeCooldownMinutes: SUMMARIZE_COOLDOWN_MS / 60000, triageRunning, triageRetryAt: triageRate?.retryAt?.toISOString() ?? null, triageRateMessage: triageRate?.error ?? null, triageCooldownMinutes: TRIAGE_COOLDOWN_MS / 60000, triageHourlyLimit, decisions, chats };
+    const triageUsage = triageUsageStatus();
+    return { syncedAt: inbox.syncedAt ?? inbox.fetchedAt ?? null, hasToken: hasToken(), crmAvailable: crm.available, crmState: crm.state, crmVerifiedAt: crm.verifiedAt, crmReason: crm.reason, aiAvailable: ai.available, aiSource: ai.source, aiUsage: aiUsageStatus(), triageUsage, triages, summarizeAiTickets, summarizeRunning, summarizeRetryAt, summarizeCooldownMinutes: SUMMARIZE_COOLDOWN_MS / 60000, triageRunning, triageRetryAt: triageRate?.retryAt?.toISOString() ?? null, triageRateMessage: triageRate?.error ?? null, triageCooldownMinutes: TRIAGE_COOLDOWN_MS / 60000, triageHourlyLimit, decisions, chats };
 }
 
 function aiUsageStatus() {
@@ -220,6 +234,11 @@ function triageRateStatus(now = Date.now()) {
     if (triageLastStartedAt && now - new Date(triageLastStartedAt).getTime() < TRIAGE_COOLDOWN_MS) return { retryAt: new Date(new Date(triageLastStartedAt).getTime() + TRIAGE_COOLDOWN_MS), error: `AI triage is limited to one start every ${TRIAGE_COOLDOWN_MS / 60000} minutes.` };
     if (triageStartedAt.length >= triageHourlyLimit) return { retryAt: new Date(triageStartedAt[0] + 60 * 60 * 1000), error: `AI triage is limited to ${triageHourlyLimit} runs per hour.` };
     return null;
+}
+
+function triageUsageStatus() {
+    triageRateStatus(); // expires old starts before reporting the current window
+    return { used: triageStartedAt.length, remaining: Math.max(0, triageHourlyLimit - triageStartedAt.length), hourlyLimit: triageHourlyLimit, running: triageRunning };
 }
 
 function readManualTypes() {
@@ -329,10 +348,22 @@ function runScript(name, args = []) {
         const env = { ...process.env, ...(currentToken ? { TIDY_TOKEN: currentToken } : {}) };
         const proc = spawn("node", [`${name}.mjs`, ...args], { cwd: here, env });
         let out = "";
-        proc.stdout.on("data", (d) => (out += d));
-        proc.stderr.on("data", (d) => (out += d)); // scripts log progress to stderr
-        proc.on("close", (code) => resolve({ ok: code === 0, code, output: out }));
-        proc.on("error", (err) => resolve({ ok: false, code: -1, output: err.message }));
+        const capture = (d) => {
+            const chunk = String(d);
+            out += chunk;
+            const match = [...chunk.matchAll(/Summarized:\s*(\d+)\/(\d+)/g)].pop();
+            setScriptProgress(name, { state: "running", message: chunk.replace(/\r/g, "").trim().split("\n").filter(Boolean).at(-1) || "Working…", ...(match ? { completed: Number(match[1]), total: Number(match[2]) } : {}) });
+        };
+        proc.stdout.on("data", capture);
+        proc.stderr.on("data", capture); // scripts log progress to stderr
+        proc.on("close", (code) => {
+            setScriptProgress(name, { state: code === 0 ? "completed" : "failed", message: code === 0 ? "Completed." : "Failed.", finishedAt: new Date().toISOString() });
+            resolve({ ok: code === 0, code, output: out });
+        });
+        proc.on("error", (err) => {
+            setScriptProgress(name, { state: "failed", message: err.message, finishedAt: new Date().toISOString() });
+            resolve({ ok: false, code: -1, output: err.message });
+        });
     });
 }
 
@@ -398,8 +429,46 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { "content-type": "text/html" });
             return res.end(PAGE);
         }
+        if (req.method === "GET" && url.pathname === "/api/inbox") {
+            const data = readData({ includeConversationSearch: true });
+            const query = String(url.searchParams.get("q") || "").trim().toLowerCase();
+            const status = String(url.searchParams.get("status") || "open");
+            const leftOnRead = String(url.searchParams.get("leftOnRead") || "all");
+            const types = String(url.searchParams.get("types") || "bug,feature,not sure").split(",").filter(Boolean);
+            const sort = String(url.searchParams.get("sort") || "");
+            const direction = url.searchParams.get("direction") === "desc" ? -1 : 1;
+            const pageSize = Math.min(100, Math.max(25, Number(url.searchParams.get("pageSize")) || 75));
+            const requestedPage = Math.max(1, Number(url.searchParams.get("page")) || 1);
+            const matches = data.chats.filter((chat) => {
+                if (status === "open" && chat.status !== "open") return false;
+                if (status === "closed" && chat.status !== "closed") return false;
+                if (chat.status === "open" && !["close", "keep"].includes(chat.decision)) return false;
+                if (leftOnRead === "yes" && !chat.leftOnRead) return false;
+                if (leftOnRead === "no" && chat.leftOnRead) return false;
+                const ticketType = chat.manualType || chat.ai?.classification || "";
+                if (types.length < 3 && ticketType && !types.includes(ticketType)) return false;
+                if (!query) return true;
+                return `${chat.code || ""} ${chat.title || ""} ${chat.parties || ""} ${chat.ai?.headline || ""} ${chat.ai?.summary || ""} ${chat.conversationSearch || ""}`.toLowerCase().includes(query);
+            });
+            matches.sort((a, b) => {
+                const value = (chat) => sort === "activity" ? new Date(chat.activityLast || chat.last || 0).getTime() : sort === "type" ? (chat.manualType || chat.ai?.classification || "") : sort === "from" ? (chat.parties || "") : sort === "ticket" ? (chat.code || "") : -new Date(chat.activityLast || chat.last || 0).getTime();
+                const left = value(a), right = value(b);
+                const compared = typeof left === "number" ? left - right : String(left).localeCompare(String(right), undefined, { sensitivity: "base" });
+                return sort ? compared * direction : compared;
+            });
+            const totalPages = Math.max(1, Math.ceil(matches.length / pageSize));
+            const page = Math.min(requestedPage, totalPages);
+            const chats = matches.slice((page - 1) * pageSize, page * pageSize).map(({ conversationSearch, ...chat }) => chat);
+            return json(res, 200, { total: matches.length, page, pageSize, totalPages, chats });
+        }
         if (req.method === "GET" && url.pathname === "/api/data") {
-            return json(res, 200, readData());
+            const data = readData();
+            return json(res, 200, data);
+        }
+        if (req.method === "GET" && url.pathname.startsWith("/api/run-status/")) {
+            const name = url.pathname.slice("/api/run-status/".length);
+            if (!RUNNABLE.has(name)) return json(res, 400, { error: `unknown script: ${name}` });
+            return json(res, 200, scriptProgress.get(name) || { name, state: "idle", message: "Waiting to start." });
         }
         if (req.method === "GET" && url.pathname.startsWith("/api/chat/")) {
             const id = decodeURIComponent(url.pathname.slice("/api/chat/".length));
@@ -408,7 +477,7 @@ const server = http.createServer(async (req, res) => {
             if (!chat) return json(res, 404, { error: "Ticket not found." });
             const isStaff = staffDetector(inbox.chats);
             return json(res, 200, {
-                id: chat.id, title: chat.title, parties: chat.partiesDescription, url: chat.url,
+                id: chat.id, code: chat.code, title: chat.title, parties: chat.partiesDescription, url: chat.url,
                 messages: (chat.messages ?? []).map((message) => ({
                     sender: message.sender, date: message.date, text: (message.text || "").slice(0, 5000),
                     staff: message.isNote || isStaff(message.sender), note: Boolean(message.isNote),
@@ -541,7 +610,7 @@ const server = http.createServer(async (req, res) => {
         if (req.method === "POST" && url.pathname === "/api/ticket-triage") {
             const { id, regenerate, by } = await body(req);
             const usage = aiUsageStatus();
-            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
+            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured AI allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
             const inbox = fs.existsSync(dataFile("inbox.json")) ? JSON.parse(fs.readFileSync(dataFile("inbox.json"), "utf8")) : { chats: [] };
             const chat = inbox.chats.find((item) => item.id === id);
             if (!chat) return json(res, 404, { ok: false, error: "Ticket not found." });
@@ -556,9 +625,9 @@ const server = http.createServer(async (req, res) => {
             triageLastStartedAt = new Date().toISOString();
             triageStartedAt.push(Date.now());
             try {
-                const result = await runAiJson(ticketTriagePrompt(chat), { preferred: "codex", cwd: TIDY_CODEBASE });
+                const result = await runAiJson(ticketTriagePrompt(chat), { cwd: TIDY_CODEBASE });
                 const triage = cleanTicketTriage(result.value, chat, result.source);
-                if (!triage.eli5Summary || !triage.customerWants || !triage.suggestedSolution) throw new Error("Codex omitted a required triage field.");
+                if (!triage.eli5Summary || !triage.customerWants || !triage.suggestedSolution) throw new Error("The AI provider omitted a required triage field.");
                 store.triages[id] = triage;
                 writeTicketTriages(store.triages);
                 const actions = readTicketActions();
@@ -578,7 +647,7 @@ const server = http.createServer(async (req, res) => {
         if (req.method === "POST" && url.pathname === "/api/proposals/draft") {
             const { ids } = await body(req);
             const usage = aiUsageStatus();
-            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
+            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured AI allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
             if (!Array.isArray(ids) || !ids.length) return json(res, 400, { error: "Select at least one feature ticket." });
             const chats = proposalSources(ids.slice(0, 20));
             if (!chats.length) return json(res, 404, { error: "The selected tickets could not be found." });
@@ -678,6 +747,11 @@ const server = http.createServer(async (req, res) => {
             const { id, decision, by } = await body(req);
             const allowed = new Set(["close", "keep", null]);
             if (!id || !allowed.has(decision)) return json(res, 400, { error: "Invalid ticket status." });
+            if (decision !== null) {
+                const chat = readData().chats.find((item) => item.id === id);
+                if (!chat) return json(res, 404, { error: "Ticket not found." });
+                if (!(chat.manualType || chat.ai?.classification)) return json(res, 400, { error: "Set a ticket type (Bug, Feature, or Not sure) before choosing Keep or Close." });
+            }
             const actions = readTicketActions();
             const previous = actions.decisions[id] ?? null;
             if (decision === null) delete actions.decisions[id]; else actions.decisions[id] = decision;
@@ -786,7 +860,7 @@ const server = http.createServer(async (req, res) => {
             const { by } = await body(req);
             if (name === "summarize") {
                 const usage = aiUsageStatus();
-                if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
+                if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured AI allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
                 const now = Date.now();
                 const retryAt = summarizeLastStartedAt ? new Date(new Date(summarizeLastStartedAt).getTime() + SUMMARIZE_COOLDOWN_MS) : null;
                 if (summarizeRunning) return json(res, 429, { ok: false, rateLimited: true, error: "AI summarisation is already running on this host. Please wait for it to finish.", retryAt: retryAt?.toISOString() ?? null });
@@ -798,6 +872,7 @@ const server = http.createServer(async (req, res) => {
                 const crm = crmTokenStatus();
                 if (!crm.available) return json(res, 400, { ok: false, error: crm.reason, authFailed: true });
             }
+            setScriptProgress(name, { name, state: "running", startedAt: new Date().toISOString(), finishedAt: null, completed: null, total: null, message: "Starting…" });
             const result = await runScript(name);
             if (name === "summarize") summarizeRunning = false;
             if (name === "sync" && result.ok) {
@@ -836,8 +911,7 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
   .b-staff{background:#eef4ff;border:1px solid #cfe0f5;border-left-color:#4a80c0}
   .b-cust{background:#faf8f3;border:1px solid #eee7d9;border-left-color:#cbbfa4}
   .b-staff .who{color:#3f6fa8} .b-cust .who{color:#a1926f}
-  .context-preview{min-width:260px;text-align:left;border-radius:8px;padding:4px 6px;margin:-4px -6px;cursor:pointer}
-  .context-preview:hover{background:#f1f5f9}.context-preview:focus{outline:2px solid #93c5fd}
+  .context-preview{min-width:260px;text-align:left;border-radius:8px;padding:4px 6px;margin:-4px -6px}
   tr.cursor-pointer>td{transition:background-color .12s ease}tr.cursor-pointer:hover>td{background:#e5e7eb!important}
   .ticket-triage-panel{background:#86efac;border-color:#16a34a;max-width:min(760px,100%)}
   .ticket-triage-panel:not([open]){display:inline-block}.ticket-triage-panel:not([open]) summary{white-space:nowrap}
@@ -860,6 +934,7 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
     </ul>
   </div>
   <button id="tokenButton" class="btn btn-sm ml-auto" onclick="updateToken()" title="Check or update the CRM access token"><span id="tokdot" class="inline-block w-2 h-2 rounded-full bg-warning mr-1"></span><span id="toktext">Checking token…</span></button>
+  <span id="triageUsage" class="text-xs opacity-70 whitespace-nowrap" title="AI triage allowance for this server session">AI triage: checking…</span>
   <span class="text-xs opacity-70" id="synced"></span>
   <button class="btn btn-sm btn-ghost" onclick="hideLog()">×log</button>
 </div>
@@ -907,6 +982,18 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
 <div id="foot" class="hidden fixed bottom-0 inset-x-0 bg-neutral text-neutral-content px-4 py-2 items-center gap-3 flex-wrap z-30"></div>
 <script>
 let DATA={chats:[]}, TAB='dashboard', RELEASE_FOLLOWUPS=null, EDIT_RELEASE=null;
+// Every user-triggered POST gets a visible lifecycle entry. Long-running script
+// commands and AI triage add richer progress of their own below.
+const dashboardFetch=window.fetch.bind(window);
+window.fetch=async function(input,init={}){
+  const method=(init.method||'GET').toUpperCase(),url=typeof input==='string'?input:input?.url||'';
+  const tracked=method==='POST'&&url.startsWith('/api/')&&!url.startsWith('/api/run/')&&url!=='/api/ticket-triage';
+  const label=url.split('?')[0].split('/').filter(Boolean).slice(-1)[0]||'action';
+  const log=document.getElementById('log');
+  if(tracked&&log){document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ '+label+' …\\nProgress: working…\\n';log.scrollTop=log.scrollHeight;}
+  try{const response=await dashboardFetch(input,init);if(tracked&&log){log.textContent+=response.ok?'Progress: completed.\\n':'Progress: failed.\\n';log.scrollTop=log.scrollHeight;}return response;}
+  catch(error){if(tracked&&log){log.textContent+='Progress: failed — '+(error?.message||error)+'\\n';log.scrollTop=log.scrollHeight;}throw error;}
+};
 let PROPOSALS=null, PROPVIEW='candidates', EDITING_PROPOSAL=null;
 let TOKEN_CHECK_IN_FLIGHT=false,TOKEN_CHECK_TIMER=null,TOKEN_CHECK_DEADLINE=0;
 let OPENED_LINKED_TICKET=null;
@@ -956,13 +1043,20 @@ function decisionPicker(c){
 }
 function outstandingDecisionPicker(c){
   const staged=pendingOutstanding[c.id]||'';
-  const button=(value,label,cls)=>{const active=staged===value;return \`<button type="button" data-decision="\${value}" data-selected-class="\${cls}" class="btn btn-xs join-item \${active?cls:'btn-outline'}" onclick="event.stopPropagation();stageOutstanding('\${c.id}','\${value}',this)" title="\${active?'Click to deselect':'Set to '+label}">\${label}</button>\`;};
+  const missingType=!ticketType(c);
+  const button=(value,label,cls)=>{const active=staged===value;return \`<button type="button" data-decision="\${value}" data-selected-class="\${cls}" class="btn btn-xs join-item \${active?cls:'btn-outline'}" \${missingType?'disabled':''} onclick="\${missingType?'':'event.stopPropagation();stageOutstanding(\\\''+c.id+'\\\',\\\''+value+'\\\',this)'}" title="\${missingType?'Set a ticket type first.':active?'Click to deselect':'Set to '+label}">\${label}</button>\`;};
+  return \`<div class="join whitespace-nowrap" aria-label="Triage ticket">\${button('close','Close','btn-error')}\${button('keep','Keep','btn-success')}</div>\`;
+}
+function stageOutstandingFromButton(button){stageOutstanding(button.dataset.ticketId,button.dataset.decision,button);}
+function outstandingDecisionPicker(c){
+  const staged=pendingOutstanding[c.id]||'',missingType=!ticketType(c);
+  const button=(value,label,cls)=>{const tip=missingType?'Set a ticket type before choosing Keep or Close.':staged===value?'Click to deselect':'Set to '+label;const control=\`<button type="button" data-ticket-id="\${c.id}" data-decision="\${value}" data-selected-class="\${cls}" class="btn btn-xs join-item \${staged===value?cls:'btn-outline'}" \${missingType?'disabled':''} \${missingType?'':'onclick="event.stopPropagation();stageOutstandingFromButton(this)"'}>\${label}</button>\`;return missingType?\`<span class="inline-block" title="\${tip}">\${control}</span>\`:control;};
   return \`<div class="join whitespace-nowrap" aria-label="Triage ticket">\${button('close','Close','btn-error')}\${button('keep','Keep','btn-success')}</div>\`;
 }
 async function setTicketType(id,type){
   const result=await (await fetch('/api/type',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,type,by:auditActor()})})).json();
   if(!result.ok)return alert(result.error||'The ticket type could not be saved.');
-  const chat=DATA.chats.find(c=>c.id===id);if(chat){chat.manualType=result.type;applyLocalActivity(chat,result.event);}render();
+  const chat=chatById(id);if(chat){chat.manualType=result.type;applyLocalActivity(chat,result.event);}render();
   const modal=document.getElementById('conversationModal');if(modal.open&&chat)document.getElementById('conversationType').innerHTML=conversationTypePicker(chat);
 }
 function applyLocalActivity(chat,event){
@@ -996,21 +1090,21 @@ function copyTriageSql(id){
   navigator.clipboard.writeText(sql).then(()=>alert('SQL query copied.')).catch(()=>prompt('Copy SQL query:',sql));
 }
 async function generateTicketTriage(id,regenerate){
-  const holder=document.getElementById('ticketTriage'),log=document.getElementById('log'),chat=DATA.chats.find(c=>c.id===id),label=chat?.code||id;
-  document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ AI triage '+label+(regenerate?' (re-triage)':'')+' …\\nPreparing ticket context…\\nCodex is reviewing the conversation and relevant Tidy code in read-only mode…\\n';log.scrollTop=log.scrollHeight;
+  const holder=document.getElementById('ticketTriage'),log=document.getElementById('log'),chat=chatById(id),label=chat?.code||id;
+  document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ AI triage '+label+(regenerate?' (re-triage)':'')+' …\\nProgress: 0/1 done\\nPreparing ticket context…\\n'+(DATA.aiSource||'AI')+' is reviewing the conversation and relevant Tidy code in read-only mode…\\n';log.scrollTop=log.scrollHeight;
   if(holder)holder.innerHTML='<div class="p-4 bg-base-100 rounded-box border border-base-300"><span class="loading loading-spinner loading-sm mr-2"></span>Generating AI triage from this ticket and the Tidy codebase…</div>';
   const started=Date.now(),progress=setInterval(()=>{const seconds=Math.floor((Date.now()-started)/1000);log.textContent+='Still generating AI triage ('+seconds+'s)…\\n';log.scrollTop=log.scrollHeight;},10000);
-  try{const result=await (await fetch('/api/ticket-triage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,regenerate,by:auditActor()})})).json();if(!result.ok)throw new Error(result.error||'AI triage could not be generated.');DATA.triages=DATA.triages||{};DATA.triages[id]=result.triage;if(holder)holder.innerHTML=ticketTriageHtml(id);log.textContent+='AI triage saved for '+label+' in '+Math.ceil((Date.now()-started)/1000)+'s.\\n';log.scrollTop=log.scrollHeight;}catch(error){if(holder)holder.innerHTML=\`<div class="alert alert-error mt-5">\${esc(error.message||error)}</div>\`;log.textContent+='AI triage failed: '+(error.message||error)+'\\n';log.scrollTop=log.scrollHeight;}finally{clearInterval(progress);}
+  try{const result=await (await fetch('/api/ticket-triage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,regenerate,by:auditActor()})})).json();if(!result.ok)throw new Error(result.error||'AI triage could not be generated.');DATA.triages=DATA.triages||{};DATA.triages[id]=result.triage;if(holder)holder.innerHTML=ticketTriageHtml(id);log.textContent+='Progress: 1/1 done\\nAI triage saved for '+label+' in '+Math.ceil((Date.now()-started)/1000)+'s.\\n';log.scrollTop=log.scrollHeight;}catch(error){if(holder)holder.innerHTML=\`<div class="alert alert-error mt-5">\${esc(error.message||error)}</div>\`;log.textContent+='AI triage failed: '+(error.message||error)+'\\n';log.scrollTop=log.scrollHeight;}finally{clearInterval(progress);}
 }
 async function openConversation(id){
-  const localChat=DATA.chats.find(c=>c.id===id);
+  const localChat=chatById(id);
   const url=new URL(window.location.href),ticket=localChat?.code||id;
   if(url.searchParams.get('ticket')!==ticket){url.searchParams.set('ticket',ticket);history.pushState({},'',url);}
   const modal=document.getElementById('conversationModal'), content=document.getElementById('conversationContent');
-  document.getElementById('conversationTitle').textContent='Conversation';document.getElementById('conversationMeta').textContent='Loading…';content.innerHTML='<div class="flex justify-center p-8"><span class="loading loading-spinner loading-lg"></span></div>';modal.showModal();
+  document.getElementById('conversationTitle').textContent=localChat?.code||'Conversation';document.getElementById('conversationMeta').textContent='Loading…';content.innerHTML='<div class="flex justify-center p-8"><span class="loading loading-spinner loading-lg"></span></div>';modal.showModal();
   const chat=await (await fetch('/api/chat/'+encodeURIComponent(id))).json();
   if(chat.error){content.innerHTML=\`<div class="alert alert-error">\${esc(chat.error)}</div>\`;return;}
-  document.getElementById('conversationTitle').textContent=chat.title||'(no subject)';document.getElementById('conversationMeta').textContent=chat.parties||'';document.getElementById('conversationReply').href=chat.url;
+  document.getElementById('conversationTitle').textContent=(chat.code?chat.code+' · ':'')+(chat.title||'(no subject)');document.getElementById('conversationMeta').textContent=chat.parties||'';document.getElementById('conversationReply').href=chat.url;
   document.getElementById('conversationType').innerHTML=localChat?conversationTypePicker(localChat):'';
   const messagesHtml=(chat.messages||[]).map(m=>m.note
     ? \`<div class="conversation-note rounded-lg p-3 mb-3"><div class="text-[11px] font-semibold mb-1">Internal note · \${esc(m.sender||'')} · \${day(m.date)}</div><div class="whitespace-pre-wrap text-sm">\${esc(m.text||'(empty)')}</div></div>\`
@@ -1027,7 +1121,7 @@ function copyConversationLink(){
 function openLinkedTicket(){
   const ticket=new URLSearchParams(window.location.search).get('ticket');
   if(!ticket||ticket===OPENED_LINKED_TICKET||document.getElementById('conversationModal').open)return;
-  const chat=DATA.chats.find(c=>c.id===ticket||c.code===ticket);
+  const chat=chatByTicket(ticket);
   if(!chat)return;
   OPENED_LINKED_TICKET=ticket;
   openConversation(chat.id);
@@ -1047,9 +1141,13 @@ async function load(){ DATA=await (await fetch('/api/data')).json();
     if(legacy.length){await Promise.all(legacy.map(([id,decision])=>fetch('/api/decision',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,decision,by:'Imported from browser history'})})));DATA=await (await fetch('/api/data')).json();}
     localStorage.setItem('tidy-actions-migrated','1');
   }
+  DATA.chatById=new Map((DATA.chats||[]).map(chat=>[chat.id,chat]));
+  DATA.chatByCode=new Map((DATA.chats||[]).filter(chat=>chat.code).map(chat=>[chat.code,chat]));
+  DATA.inboxOrder=new Map((DATA.chats||[]).slice().sort((a,b)=>new Date(b.activityLast||b.last||0)-new Date(a.activityLast||a.last||0)).map((chat,index)=>[chat.id,index]));
   REVIEW.decisions=Object.assign({},DATA.decisions||{});saveReview();
   document.getElementById('synced').textContent = DATA.syncedAt? 'synced '+day(DATA.syncedAt):'no data — run Sync';
   paintTokenStatus();
+  paintTriageUsage();
   updateSyncState();
   const summarize=document.getElementById('summarizeTool');
   const summarizeHint=document.getElementById('summarizeHint');
@@ -1058,8 +1156,8 @@ async function load(){ DATA=await (await fetch('/api/data')).json();
   summarize.disabled=!DATA.aiAvailable||DATA.summarizeRunning||waiting;
   summarize.classList.toggle('opacity-40',summarize.disabled);
   if(!DATA.aiAvailable){
-    summarizeHint.textContent='Unavailable — the host administrator must sign in to Codex on this PC';
-    summarize.title='Staff do not sign in here. Ask the host administrator to sign in to Codex on the host PC.';
+    summarizeHint.textContent='Unavailable — the host administrator must sign in to the configured AI provider on this PC';
+    summarize.title='Staff do not sign in here. Ask the host administrator to sign in to the configured AI provider on the host PC.';
   }else if(DATA.summarizeRunning){
     summarizeHint.textContent='AI summarisation is running on this host. Please wait.';
     summarize.title='Only one AI summarisation can run at a time.';
@@ -1070,7 +1168,7 @@ async function load(){ DATA=await (await fetch('/api/data')).json();
   }else{
     const n=DATA.summarizeAiTickets||0;
     summarizeHint.textContent=n?'Available via '+DATA.aiSource+' · '+n+' new or changed ticket'+(n===1?' needs':'s need')+' AI':'Available via '+DATA.aiSource+' · no tickets currently need AI';
-    summarize.title=n?'Only these '+n+' new, changed, or failed tickets are sent to Codex. Unchanged summaries are reused.':'No ticket transcript will be sent to Codex; the existing summaries are already current.';
+    summarize.title=n?'Only these '+n+' new, changed, or failed tickets are sent to '+DATA.aiSource+'. Unchanged summaries are reused.':'No ticket transcript will be sent to '+DATA.aiSource+'; the existing summaries are already current.';
   }
   render();
   openLinkedTicket();
@@ -1084,6 +1182,12 @@ function paintTokenStatus(checking=false){
   const seconds=checking&&TOKEN_CHECK_DEADLINE?Math.max(0,Math.ceil((TOKEN_CHECK_DEADLINE-Date.now())/1000)):null;
   dot.className='inline-block w-2 h-2 rounded-full mr-1 '+(styles[state]||'bg-warning');text.textContent=checking?'Checking token · '+seconds+'s':(labels[state]||'Token status unknown');
   const checked=DATA.crmVerifiedAt?' Last verified '+new Date(DATA.crmVerifiedAt).toLocaleTimeString()+'.':'';button.title=(DATA.crmReason||labels[state])+checked+' Click to update the token.';
+}
+function paintTriageUsage(){
+  const el=document.getElementById('triageUsage'),usage=DATA.triageUsage;if(!el||!usage)return;
+  el.textContent='AI triage: '+usage.remaining+' left';
+  el.title=usage.used+' of '+usage.hourlyLimit+' AI triages used in the current server hour.'+(usage.running?' One is running now.':'');
+  el.classList.toggle('text-warning',usage.remaining<=Math.max(2,Math.ceil(usage.hourlyLimit*.2)));
 }
 async function refreshTokenStatus(force=false){
   if(TOKEN_CHECK_IN_FLIGHT||!DATA.hasToken)return;
@@ -1124,6 +1228,8 @@ function render(){
 const idleDays=iso=>iso?Math.max(0,Math.floor((Date.now()-new Date(iso).getTime())/86400000)):0;
 const lastMessage=c=>c.tail?.length?c.tail[c.tail.length-1]:null;
 const waitingOnTidy=c=>{const last=lastMessage(c);return Boolean(last&&!last.staff);};
+const chatById=id=>DATA.chatById?.get(id)||null;
+const chatByTicket=value=>chatById(value)||DATA.chatByCode?.get(value)||null;
 const clientName=c=>{const parts=String(c.parties||'Unknown client').split(',').map(x=>x.trim()).filter(Boolean);return parts.at(-1)||'Unknown client';};
 function dashboardBars(rows,color='#16a34a'){
   const max=Math.max(1,...rows.map(r=>r.value));
@@ -1131,12 +1237,14 @@ function dashboardBars(rows,color='#16a34a'){
 }
 function renderDashboard(){
   const v=document.getElementById('view');
-  const open=DATA.chats.filter(c=>c.status==='open');
-  const waiting=open.filter(waitingOnTidy);
-  const stale=waiting.filter(c=>idleDays(c.last)>=7);
+  const open=[],waiting=[],stale=[],ageCounts=[0,0,0,0,0],typeCounts={bug:0,feature:0,'not sure':0,unclassified:0};
   const clients=new Map();
-  for(const c of open){
+  for(const c of DATA.chats){
+    if(c.status!=='open')continue;
+    open.push(c);
     const name=clientName(c), days=idleDays(c.last), isWaiting=waitingOnTidy(c);
+    const type=ticketType(c);if(Object.hasOwn(typeCounts,type))typeCounts[type]++;else typeCounts.unclassified++;
+    if(isWaiting){waiting.push(c);if(days>=7)stale.push(c);if(days<=2)ageCounts[0]++;else if(days<=7)ageCounts[1]++;else if(days<=14)ageCounts[2]++;else if(days<=30)ageCounts[3]++;else ageCounts[4]++;}
     if(!clients.has(name))clients.set(name,{name,open:0,waiting:0,oldest:0,score:0});
     const x=clients.get(name);x.open++;if(isWaiting){x.waiting++;x.oldest=Math.max(x.oldest,days);}
   }
@@ -1144,14 +1252,14 @@ function renderDashboard(){
   const attention=[...clients.values()].filter(x=>x.waiting>0).sort((a,b)=>b.score-a.score||b.oldest-a.oldest).slice(0,8);
   const highAttention=[...clients.values()].filter(x=>x.waiting>=2||(x.waiting>=1&&x.oldest>=14)).length;
   const ageBuckets=[
-    {label:'0–2 days',value:waiting.filter(c=>idleDays(c.last)<=2).length,color:'#22c55e'},
-    {label:'3–7 days',value:waiting.filter(c=>idleDays(c.last)>=3&&idleDays(c.last)<=7).length,color:'#84cc16'},
-    {label:'8–14 days',value:waiting.filter(c=>idleDays(c.last)>=8&&idleDays(c.last)<=14).length,color:'#f59e0b'},
-    {label:'15–30 days',value:waiting.filter(c=>idleDays(c.last)>=15&&idleDays(c.last)<=30).length,color:'#f97316'},
-    {label:'30+ days',value:waiting.filter(c=>idleDays(c.last)>30).length,color:'#dc2626'},
+    {label:'0–2 days',value:ageCounts[0],color:'#22c55e'},
+    {label:'3–7 days',value:ageCounts[1],color:'#84cc16'},
+    {label:'8–14 days',value:ageCounts[2],color:'#f59e0b'},
+    {label:'15–30 days',value:ageCounts[3],color:'#f97316'},
+    {label:'30+ days',value:ageCounts[4],color:'#dc2626'},
   ];
-  const types=['bug','feature','not sure'].map((type,i)=>({label:type,value:open.filter(c=>ticketType(c)===type).length,color:['#dc2626','#16a34a','#d97706'][i]}));
-  const unclassified=open.filter(c=>!ticketType(c)).length;if(unclassified)types.push({label:'unclassified',value:unclassified,color:'#94a3b8'});
+  const types=['bug','feature','not sure'].map((type,i)=>({label:type,value:typeCounts[type],color:['#dc2626','#16a34a','#d97706'][i]}));
+  if(typeCounts.unclassified)types.push({label:'unclassified',value:typeCounts.unclassified,color:'#94a3b8'});
   const oldest=[...waiting].sort((a,b)=>idleDays(b.last)-idleDays(a.last)).slice(0,10);
   const stat=(label,value,note,color)=>\`<div class="card bg-base-100 shadow-sm border-l-4 \${color}"><div class="card-body p-4 gap-0"><div class="text-3xl font-bold">\${value}</div><div class="font-semibold">\${label}</div><div class="text-xs opacity-55 mt-1">\${note}</div></div></div>\`;
   v.innerHTML=\`<div class="flex items-end justify-between gap-3 flex-wrap mb-4"><div><h1 class="text-2xl font-bold">Support dashboard</h1><p class="text-sm opacity-60">Prioritise limited capacity using ticket age, client load, and who spoke last.</p></div><span class="text-xs opacity-50">Based on data synced \${DATA.syncedAt?day(DATA.syncedAt):'never'}</span></div>
@@ -1225,7 +1333,7 @@ function outstandingRows(){
     if(c.status!=='open') return false;
     const d=REVIEW.decisions[c.id];
     if(d) return false;
-    if(window._otfs.length<3&&!window._otfs.includes(ticketType(c)))return false;
+    if(window._otfs.length<3&&ticketType(c)&&!window._otfs.includes(ticketType(c)))return false;
     if(window._oq){ const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.summary||'')).toLowerCase(); if(!hay.includes(window._oq)) return false; }
     return true;
   }).sort((a,b)=>new Date(a.last||0)-new Date(b.last||0));
@@ -1296,7 +1404,7 @@ function releaseFollowupGroup(name,items){
 function releaseFollowupCard(item){
   const pending=item.closedAt?0:(item.tickets||[]).filter(ticket=>ticket.status!=='responded').length;
   const title='PR #'+esc(item.prNumber)+(item.prTitle?' · '+esc(item.prTitle):'');
-  const tickets=(item.tickets||[]).map(ticket=>{const chat=DATA.chats.find(c=>c.id===ticket.ticketId),done=ticket.status==='responded';return \`<div class="grid grid-cols-1 lg:grid-cols-[minmax(180px,1fr)_minmax(260px,2fr)_320px] gap-3 items-center p-3 border-t border-base-200 \${done?'opacity-55':''}"><div><button class="font-semibold link link-primary text-left" onclick="openConversation('\${ticket.ticketId}')">\${esc(chat?.code||ticket.ticketId)} · \${esc(chat?clientName(chat):'Ticket not in current sync')}</button><div class="text-xs">\${done?'Responded '+day(ticket.respondedAt):'Customer response needed'} · \${esc(chat?.status||'unknown')}</div></div><div>\${chat?contextHtml(chat,170):'<span class="text-sm opacity-60">Ticket details unavailable.</span>'}</div><div class="flex gap-2 justify-end">\${chat?.url?\`<a class="btn btn-sm btn-primary whitespace-nowrap" href="\${chat.url}" target="_blank">Reply in CRM ↗</a>\`:''}<button class="btn btn-sm w-44 whitespace-nowrap \${done?'btn-outline':'btn-success'}" onclick="setReleaseTicketStatus('\${item.id}','\${ticket.ticketId}','\${done?'needs_response':'responded'}')">\${done?'Needs response again':'Mark responded'}</button></div></div>\`;}).join('');
+  const tickets=(item.tickets||[]).map(ticket=>{const chat=chatById(ticket.ticketId),done=ticket.status==='responded';return \`<div class="grid grid-cols-1 lg:grid-cols-[minmax(180px,1fr)_minmax(260px,2fr)_320px] gap-3 items-center p-3 border-t border-base-200 \${done?'opacity-55':''}"><div><button class="font-semibold link link-primary text-left" onclick="openConversation('\${ticket.ticketId}')">\${esc(chat?.code||ticket.ticketId)} · \${esc(chat?clientName(chat):'Ticket not in current sync')}</button><div class="text-xs">\${done?'Responded '+day(ticket.respondedAt):'Customer response needed'} · \${esc(chat?.status||'unknown')}</div></div><div>\${chat?contextHtml(chat,170):'<span class="text-sm opacity-60">Ticket details unavailable.</span>'}</div><div class="flex gap-2 justify-end">\${chat?.url?\`<a class="btn btn-sm btn-primary whitespace-nowrap" href="\${chat.url}" target="_blank">Reply in CRM ↗</a>\`:''}<button class="btn btn-sm w-44 whitespace-nowrap \${done?'btn-outline':'btn-success'}" onclick="setReleaseTicketStatus('\${item.id}','\${ticket.ticketId}','\${done?'needs_response':'responded'}')">\${done?'Needs response again':'Mark responded'}</button></div></div>\`;}).join('');
   return \`<div class="card bg-base-100 border border-base-300 mb-3 last:mb-0"><div class="card-body p-0"><div class="p-4 flex items-start gap-3 flex-wrap"><div><h4 class="font-bold text-lg">\${item.prUrl?\`<a class="link link-primary" href="\${esc(item.prUrl)}" target="_blank">\${title} ↗</a>\`:title}</h4><div class="text-xs opacity-55">Released \${esc(item.releasedAt||'date unknown')} · \${pending} response\${pending===1?'':'s'} remaining</div>\${item.notes?\`<div class="text-sm mt-2">\${esc(item.notes)}</div>\`:''}</div><div class="ml-auto flex gap-2"><button class="btn btn-sm" onclick="startEditRelease('\${item.id}')">Edit mapping</button><button class="btn btn-sm btn-error btn-outline" onclick="deleteReleaseFollowup('\${item.id}')">Delete</button></div></div>\${tickets}</div></div>\`;
 }
 async function saveReleaseFollowup(id){
@@ -1312,7 +1420,7 @@ async function closeRelease(releaseName,ticketCount){
   const result=await (await fetch('/api/release-followups/close-release',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({releaseName,by:auditActor()})})).json();
   if(result.authFailed){await load();return alert(result.error||'The CRM token has expired.');}
   if(!result.ok)return alert(result.error||'The release could not be closed.');
-  for(const row of result.results||[]){const chat=DATA.chats.find(item=>item.id===row.id);if(chat)chat.status='closed';}
+  for(const row of result.results||[]){const chat=chatById(row.id);if(chat)chat.status='closed';}
   RELEASE_FOLLOWUPS=null;await renderReleases();alert(releaseName+' is closed. All mapped tickets are closed in the CRM.');
 }
 async function deleteReleaseFollowup(id){const item=RELEASE_FOLLOWUPS.find(row=>row.id===id);if(!item||!confirm('Delete the PR #'+item.prNumber+' mapping? Ticket and CRM data will not be deleted.'))return;const result=await (await fetch('/api/release-followups/delete',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,by:auditActor()})})).json();if(!result.ok)return alert(result.error||'Could not delete the mapping.');RELEASE_FOLLOWUPS=null;EDIT_RELEASE=null;renderReleases();}
@@ -1347,7 +1455,7 @@ function renderProposalCandidates(candidates,drafts=[]){
 }
 function selectedProposalIds(){return [...PROPSELECT].filter(id=>DATA.chats.some(c=>c.id===id));}
 function blankProposal(ids){
-  const chats=ids.map(id=>DATA.chats.find(c=>c.id===id)).filter(Boolean);
+  const chats=ids.map(chatById).filter(Boolean);
   return {title:chats.length===1?(chats[0].ai?.headline||chats[0].title||''):'',eli5Summary:'',customerPerspective:'',executiveSummary:'',problem:'',impact:'',scope:'',risks:'',questions:'',priority:'',estimatedDevEffort:'',estimatedStartDate:'',estimatedCompletionDate:'',estimateAssumptions:'',evidence:[],sourceChatIds:ids,status:'draft',author:localStorage.getItem('tidy-staff-name')||''};
 }
 function beginManualProposal(){EDITING_PROPOSAL=blankProposal(selectedProposalIds());PROPVIEW='edit';renderProposals();}
@@ -1369,7 +1477,7 @@ async function draftAllFeatureProposals(){
 const proposalField=(id,label,value,rows=0,help='')=>\`<label class="form-control"><span class="label-text font-semibold mb-1">\${label}</span>\${rows?\`<textarea id="\${id}" class="textarea textarea-bordered w-full" rows="\${rows}">\${esc(value||'')}</textarea>\`:\`<input id="\${id}" class="input input-bordered w-full" value="\${esc(value||'')}">\`}\${help?\`<span class="text-xs opacity-50 mt-1">\${help}</span>\`:''}</label>\`;
 function renderProposalForm(){
   const p=EDITING_PROPOSAL||blankProposal([]), body=document.getElementById('proposalBody');
-  const sources=(p.sourceChatIds||[]).map(id=>DATA.chats.find(c=>c.id===id)).filter(Boolean);
+  const sources=(p.sourceChatIds||[]).map(chatById).filter(Boolean);
   body.innerHTML=\`<div class="card bg-base-100 shadow-sm"><div class="card-body p-5"><div class="flex items-center gap-2"><h2 class="text-xl font-bold">\${p.id?'Edit proposal':'New proposal'}</h2>\${p.aiSource?\`<span class="badge badge-outline">Drafted by \${esc(p.aiSource)}</span>\`:''}</div><div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
     <div class="lg:col-span-2">\${proposalField('propTitle','Proposal title',p.title)}</div>
     <div class="lg:col-span-2">\${proposalField('propEli5','Simple summary',p.eli5Summary,2,'Explain it plainly in one or two sentences, without jargon.')}</div>
@@ -1395,12 +1503,12 @@ async function saveProposal(status){
 function proposalStatusBadge(p){return \`<span class="badge \${PROP_COLOR[p.status]||'badge-ghost'}">\${esc(PROP_STATUS[p.status]||p.status)}</span>\`;}
 function proposalDetails(p,compact=false){
   const section=(title,text)=>text?\`<div><h4 class="text-xs uppercase tracking-wide opacity-45 font-semibold mt-3">\${title}</h4><div class="whitespace-pre-wrap text-sm">\${esc(text)}</div></div>\`:'';
-  const sources=(p.sourceChatIds||[]).map(id=>DATA.chats.find(c=>c.id===id)).filter(Boolean);
+  const sources=(p.sourceChatIds||[]).map(chatById).filter(Boolean);
   const estimate=\`<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3"><div class="bg-base-200 rounded-lg p-3"><div class="text-[10px] uppercase opacity-50 font-semibold">Estimated effort</div><div class="font-semibold">\${esc(p.estimatedDevEffort||'Not estimated')}</div></div><div class="bg-base-200 rounded-lg p-3"><div class="text-[10px] uppercase opacity-50 font-semibold">Indicative start</div><div class="font-semibold">\${esc(p.estimatedStartDate||'Not estimated')}</div></div><div class="bg-base-200 rounded-lg p-3"><div class="text-[10px] uppercase opacity-50 font-semibold">Indicative completion</div><div class="font-semibold">\${esc(p.estimatedCompletionDate||'Not estimated')}</div></div></div>\${section('Estimate assumptions',p.estimateAssumptions)}<div class="text-[11px] opacity-50 mt-1">Planning estimate only—not a delivery commitment.</div>\`;
   return \`<div class="flex items-start gap-2"><div class="flex-1"><h3 class="text-lg font-bold">\${esc(p.title)}</h3><div class="text-xs opacity-50">Prepared by \${esc(p.author||'Staff')} · updated \${day(p.updatedAt)}</div></div>\${proposalStatusBadge(p)}</div>\${section('Simple summary',p.eli5Summary)}\${section('Customer perspective',p.customerPerspective)}\${section('Executive summary',p.executiveSummary)}\${section('Customer problem',p.problem)}\${section('Expected impact',p.impact)}\${estimate}\${compact?'':section('Proposed scope',p.scope)+section('Evidence',(p.evidence||[]).map(x=>'• '+x).join('\\n'))+section('Risks and dependencies',p.risks)+section('Open questions',p.questions)+section('Priority recommendation',p.priority)}<div class="flex gap-2 flex-wrap mt-3">\${sources.map(c=>\`<a class="badge badge-outline" href="\${c.url}" target="_blank">\${esc(clientName(c))} ↗</a>\`).join('')}</div>\`;
 }
 function proposalHistoryLabel(h){return PROP_STATUS[h.outcome||h.status]||h.action;}
-function openProposalSources(p){return (p.sourceChatIds||[]).map(id=>DATA.chats.find(c=>c.id===id)).filter(c=>c&&c.status==='open');}
+function openProposalSources(p){return (p.sourceChatIds||[]).map(chatById).filter(c=>c&&c.status==='open');}
 function renderProposalRepository(){
   const body=document.getElementById('proposalBody');
   body.innerHTML=PROPOSALS.length?PROPOSALS.slice().sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).map(p=>{const openSources=openProposalSources(p);return \`<div class="card bg-base-100 shadow-sm mb-3"><div class="card-body p-5">\${proposalDetails(p)}<div class="card-actions justify-end mt-3"><details class="dropdown dropdown-top"><summary class="btn btn-sm btn-ghost">Decision history</summary><div class="dropdown-content bg-white text-slate-900 border rounded-box shadow-xl p-3 w-80 z-40">\${(p.history||[]).slice().reverse().map(h=>\`<div class="text-xs mb-2"><b>\${esc(proposalHistoryLabel(h))}</b> · \${esc(h.by)} · \${day(h.at)}\${h.comment?\`<div class="opacity-70">\${esc(h.comment)}</div>\`:''}</div>\`).join('')||'No history yet.'}</div></details>\${p.status==='approved'&&openSources.length?\`<button class="btn btn-sm btn-warning" onclick="closeProposalSources('\${p.id}',true)">Close source tickets (\${openSources.length})</button>\`:''}\${p.status==='approved'?\`<button class="btn btn-sm btn-success" onclick="completeProposal('\${p.id}')">Mark feature completed</button>\`:''}<button class="btn btn-sm" onclick="EDITING_PROPOSAL=PROPOSALS.find(x=>x.id==='\${p.id}');PROPVIEW='edit';renderProposals()">Edit</button><button class="btn btn-sm btn-error btn-outline" onclick="deleteProposal('\${p.id}')">Delete proposal</button></div></div></div>\`;}).join(''):'<div class="card bg-base-100"><div class="card-body opacity-60">No proposals yet. Start from Feature requests.</div></div>';
@@ -1539,16 +1647,18 @@ function auditRows(){
 
 /* ---------- Inbox tab ---------- */
 // Build controls ONCE; typing only refreshes #tbl (rebuilding the input would drop focus).
+const INBOX_PAGE_SIZE=75;
 function renderInbox(){
   const v=document.getElementById('view');
+  const linkedPage=Number(new URL(window.location.href).searchParams.get('page'));
+  if(Number.isInteger(linkedPage)&&linkedPage>0)window._inboxPage=linkedPage;
   const types=['bug','feature','not sure'];
   const selected=Array.isArray(window._fts)?window._fts:(window._ft&&window._ft!=='all type'?[window._ft]:types);
-  window._inboxOrder=new Map(DATA.chats.slice().sort((a,b)=>new Date(b.activityLast||b.last||0)-new Date(a.activityLast||a.last||0)).map((chat,index)=>[chat.id,index]));
+  const leftOnRead=window._inboxLeftOnRead==='yes';
   v.innerHTML=\`<div class="flex gap-2 mb-3 flex-wrap items-center">
-    <input id="q" class="input input-bordered input-sm" placeholder="search tickets and conversations…" oninput="inboxRows()" value="\${esc(window._q||'')}">
-    <div class="flex gap-1.5 flex-wrap" aria-label="Filter by type">\${types.map(type=>\`<label class="flex items-center gap-1.5 border border-base-300 rounded-lg px-2 py-1 bg-base-100 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div>
-    <select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select>
-    <span class="text-sm opacity-60" id="rowcount"></span></div><div id="tbl"></div>\`;
+    <input id="q" class="input input-bordered input-sm" placeholder="search tickets and conversations…" oninput="queueInboxSearch()" value="\${esc(window._q||'')}">
+    <details class="dropdown"><summary class="btn btn-sm">Filters <span class="opacity-60">▾</span></summary><div class="dropdown-content z-30 mt-2 w-64 rounded-box border border-base-300 bg-base-100 p-3 shadow-xl" onclick="event.stopPropagation()"><div class="text-xs font-semibold uppercase opacity-55 mb-2">Ticket type</div><div class="grid gap-2">\${types.map(type=>\`<label class="flex items-center gap-2 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div><div class="divider my-3"></div><label class="form-control"><span class="label-text text-xs font-semibold uppercase opacity-55 mb-1">Ticket status</span><select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select></label><label class="flex items-center gap-2 cursor-pointer text-sm mt-4"><input id="flr" type="checkbox" class="checkbox checkbox-sm checkbox-primary" \${leftOnRead?'checked':''} onchange="inboxRows()"> Left on read</label></div></details>
+    <span class="text-sm opacity-60" id="rowcount"></span></div><div id="tbl"><div class="flex items-center justify-center gap-3 p-12 opacity-65"><span class="loading loading-spinner loading-md"></span><span>Loading tickets…</span></div></div>\`;
   inboxRows();
 }
 function setInboxSort(key){
@@ -1560,31 +1670,35 @@ function inboxSortHeader(key,label){
   const active=window._inboxSort===key,dir=window._inboxSortDirection==='desc'?'↓':'↑';
   return \`<button class="font-semibold hover:underline" onclick="setInboxSort('\${key}')" title="Sort by \${label}">\${label}\${active?' '+dir:''}</button>\`;
 }
-function inboxRows(){
+function setInboxPage(page){window._inboxPage=Math.max(1,Number(page)||1);window.scrollTo(0,0);inboxRows(true);}
+function queueInboxSearch(){clearTimeout(window._inboxSearchTimer);window._inboxSearchTimer=setTimeout(()=>inboxRows(),180);}
+async function inboxRows(keepPage=false){
   window._q=document.getElementById('q').value.toLowerCase();
-  window._fts=[...document.querySelectorAll('.ift:checked')].map(el=>el.value); window._fs=document.getElementById('fs').value;
-  let rows=DATA.chats.filter(c=>{
-    if(window._fs==='open'&&c.status!=='open')return false;
-    if(window._fs==='closed'&&c.status!=='closed')return false;
-    const decision=REVIEW.decisions[c.id];
-    if(window._fts.length<3&&!window._fts.includes(ticketType(c)))return false;
-    if(window._q){const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.headline||'')+' '+(c.ai?.summary||'')+' '+(c.conversationSearch||'')).toLowerCase();if(!hay.includes(window._q))return false;}
-    return true;
-  }).sort((a,b)=>{
-    const key=window._inboxSort,dir=window._inboxSortDirection==='desc'?-1:1;
-    if(key){const value=(chat)=>key==='activity'?new Date(chat.activityLast||chat.last||0).getTime():key==='type'?ticketType(chat):key==='from'?(chat.parties||''):(chat.code||'');const av=value(a),bv=value(b);const compared=typeof av==='number'?av-bv:String(av).localeCompare(String(bv),undefined,{sensitivity:'base'});if(compared)return compared*dir;}
-    return (window._inboxOrder?.get(a.id)??Number.MAX_SAFE_INTEGER)-(window._inboxOrder?.get(b.id)??Number.MAX_SAFE_INTEGER);
-  });
-  document.getElementById('rowcount').textContent=rows.length+' tickets';
+  window._fts=[...document.querySelectorAll('.ift:checked')].map(el=>el.value); window._fs=document.getElementById('fs').value;window._inboxLeftOnRead=document.getElementById('flr').checked?'yes':'all';
+  if(!keepPage)window._inboxPage=1;
+  const params=new URLSearchParams({q:window._q,status:window._fs,types:window._fts.join(','),leftOnRead:window._inboxLeftOnRead,page:window._inboxPage,pageSize:INBOX_PAGE_SIZE,sort:window._inboxSort||'',direction:window._inboxSortDirection||''});
+  const requestId=(window._inboxRequestId||0)+1;window._inboxRequestId=requestId;
+  const table=document.getElementById('tbl'),count=document.getElementById('rowcount');
+  if(table)table.innerHTML='<div class="flex items-center justify-center gap-3 p-12 opacity-65"><span class="loading loading-spinner loading-md"></span><span>Loading tickets…</span></div>';
+  if(count)count.textContent='Loading tickets…';
+  let result;
+  try{result=await (await fetch('/api/inbox?'+params)).json();}catch(error){if(requestId===window._inboxRequestId&&table)table.innerHTML='<div class="alert alert-error">Could not load tickets. Please try again.</div>';if(requestId===window._inboxRequestId&&count)count.textContent='Load failed';return;}
+  if(requestId!==window._inboxRequestId)return;
+  const totalPages=result.totalPages||1,rows=result.chats||[];window._inboxPage=result.page||1;
+  const pageStart=(window._inboxPage-1)*INBOX_PAGE_SIZE;
+  const url=new URL(window.location.href);url.searchParams.set('page',window._inboxPage);history.replaceState({},'',url);
+  document.getElementById('rowcount').textContent=result.total?(pageStart+1)+'–'+(pageStart+rows.length)+' of '+result.total+' tickets':'0 tickets';
   const stColor=s=>s==='open'?'text-success font-semibold':s==='deleted'?'text-error':'opacity-50';
   const manageCell=c=>c.status==='open'?decisionPicker(c):c.status==='closed'?\`<button class="btn btn-xs btn-success \${DATA.crmAvailable?'':'opacity-60'}" onclick="reopenTicket('\${c.id}')" title="\${DATA.crmAvailable?'Reopen this ticket in the CRM':esc(DATA.crmReason||'CRM access unavailable')}">Reopen</button>\`:'—';
+  const pageNumbers=[1,...Array.from({length:5},(_,i)=>window._inboxPage-2+i).filter(page=>page>1&&page<totalPages),totalPages].filter((page,index,pages)=>pages.indexOf(page)===index);
+  const pager=totalPages>1?\`<div class="flex justify-center items-center gap-1 pt-4 flex-wrap"><button class="btn btn-sm" \${window._inboxPage===1?'disabled':''} onclick="setInboxPage(\${window._inboxPage-1})">‹</button>\${pageNumbers.map((page,index)=>\`\${index&&pageNumbers[index-1]!==page-1?'<span class="px-1 opacity-50">…</span>':''}<button class="btn btn-sm \${page===window._inboxPage?'btn-primary':''}" onclick="setInboxPage(\${page})">\${page}</button>\`).join('')}<button class="btn btn-sm" \${window._inboxPage===totalPages?'disabled':''} onclick="setInboxPage(\${window._inboxPage+1})">›</button></div>\`:'';
    document.getElementById('tbl').innerHTML=\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
     <thead><tr><th>\${inboxSortHeader('ticket','Ticket')}</th><th>\${inboxSortHeader('activity','Last activity')}</th><th>\${inboxSortHeader('from','From')}</th><th>Headline</th><th>\${inboxSortHeader('type','Type')}</th><th>Manage</th><th>Status</th><th>Context</th><th>CRM</th></tr></thead><tbody>
     \${rows.map(c=>\`<tr class="hover cursor-pointer \${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'bg-base-200 opacity-60':''}" title="\${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'Pending close — remains here until the CRM confirms closure':''}" onclick="openTicketFromRow(event,'\${c.id}')"><td class="font-mono text-xs whitespace-nowrap">\${esc(c.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(c.activityLast||c.last)}</div>\${c.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(c.parties||'')}</td>
         <td>\${esc(c.ai&&!c.ai.unavailable?c.ai.headline:(c.title||''))}</td><td>\${typePicker(c)}</td><td>\${manageCell(c)}</td>
         <td><span class="\${stColor(c.status)}">\${c.status}</span></td><td class="max-w-md">\${contextHtml(c,240)}</td>
         <td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">\${c.status==='closed'?'view CRM ↗':'reply in CRM ↗'}</a></td></tr>\`).join('')}
-    </tbody></table></div>\`;
+    </tbody></table></div>\${pager}\`;
 }
 
 function countsFor(list){ let close=0,keep=0; for(const c of list){const d=REVIEW.decisions[c.id]; if(d==='close')close++;else if(d==='keep')keep++;} return {close,keep,undecided:list.length-close-keep}; }
@@ -1633,7 +1747,7 @@ async function closeDecided(){
   await run('sync',true); await load(); const m2=document.getElementById('fmsg'); if(m2)m2.textContent=\`closed \${ok}/\${ids.length}.\`;
 }
 async function reopenTicket(id){
-  const chat=DATA.chats.find(c=>c.id===id);
+  const chat=chatById(id);
   if(!chat||chat.status!=='closed')return alert('This ticket is not currently marked closed. Run Sync if the CRM changed recently.');
   if(!DATA.crmAvailable)return alert((DATA.crmReason||'CRM access is unavailable')+'\\n\\nUse the Token button to paste your CRM refresh token.');
   if(!confirm('Reopen '+(chat.code||chat.title||'this ticket')+' in the CRM?'))return;
@@ -1647,10 +1761,18 @@ async function reopenTicket(id){
 }
 
 /* ---------- run scripts ---------- */
+function commandProgressText(status,started){
+  if(Number.isInteger(status?.completed)&&Number.isInteger(status?.total))return 'Progress: '+status.completed+'/'+status.total+' done';
+  if(status?.state==='running')return status.message&&status.message!=='Starting…'?status.message:'Working… ('+Math.floor((Date.now()-started)/1000)+'s)';
+  return status?.message||'';
+}
 async function run(name,quiet){
   const log=document.getElementById('log'), button=name==='summarize'?document.getElementById('summarizeTool'):null, hint=name==='summarize'?document.getElementById('summarizeHint'):null;
   document.getElementById('logpanel').classList.remove('hidden'); log.textContent+='\\n$ '+name+' …\\n';
   if(button){button.disabled=true;button.classList.add('opacity-40');hint.textContent='Summarising… this can take several minutes. Keep this page open.';}
+  const started=Date.now();let previousProgress='';
+  const showProgress=async()=>{try{const status=await (await fetch('/api/run-status/'+name)).json();const text=commandProgressText(status,started);if(text&&text!==previousProgress){previousProgress=text;log.textContent+=text+'\\n';log.scrollTop=log.scrollHeight;if(button)hint.textContent=text;}}catch{}};
+  await showProgress();const progress=setInterval(showProgress,1000);
   try{
     const response=await fetch('/api/run/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({by:auditActor()})});
     const r=await response.json();
@@ -1658,7 +1780,7 @@ async function run(name,quiet){
     if(r.rateLimited){ await load(); alert(r.error||'AI summarisation is temporarily rate limited.'); return; }
     if(r.authFailed){ await load(); alert((r.error||'CRM authentication could not be renewed.')+'\\n\\nUse the Token button to paste your CRM refresh token.'); return; }
     if(!r.ok){
-      if(name==='summarize') alert('AI summarisation could not run on this host. Staff do not need to log in here. Ask the host administrator to check the Activity log and run codex login status on the host PC.');
+      if(name==='summarize') alert('AI summarisation could not run on this host. Staff do not need to log in here. Ask the host administrator to check the Activity log and sign in to the configured AI provider on the host PC.');
       else alert('This action failed. Open the Activity log for details.');
       return;
     }
@@ -1669,9 +1791,10 @@ async function run(name,quiet){
     }
   }catch(error){
     log.textContent+='Unable to contact the local dashboard: '+(error?.message||error)+'\\n'; log.scrollTop=log.scrollHeight;
-    alert(name==='summarize'?'AI summarisation did not start because this browser could not reach the local dashboard. Ask the host administrator to check that the dashboard is running.':'This action did not start because the local dashboard could not be reached.');
+    alert(name==='summarize'?'AI summarisation did not start because this browser could not reach the dashboard. On the host PC, check that the Node dashboard is running at http://localhost:8787/. If staff use a tunnel link, Cloudflare Tunnel must also be running.':'This action did not start because the local dashboard could not be reached.');
   }finally{
-    if(button){await load();}
+    clearInterval(progress);
+    if(button){try{await load();}catch{}}
   }
 }
 async function exportExcel(){
@@ -1685,5 +1808,7 @@ async function exportExcel(){
 function hideLog(){ document.getElementById('logpanel').classList.add('hidden'); }
 load();
 setInterval(()=>refreshTokenStatus(),5*60*1000);
-setInterval(()=>load().catch(()=>{}),30*1000);
+// Do not periodically call load() here: it rebuilds the active Inbox table,
+// interrupting searches, paging, and reading. Actions that change data already
+// refresh explicitly after they finish.
 </script></body></html>`;
