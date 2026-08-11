@@ -119,6 +119,18 @@ the dashboard's Token button (or delete `.tidy-auth.json` before setting the env
 Set `TIDY_AI_BACKEND=codex|claude|custom|anthropic-api` to force a provider. Without
 that setting the order is custom command, Anthropic API, Codex, then Claude.
 
+### Dashboard button without an API key
+
+The **Summarize with AI** button can use the Codex CLI under your ChatGPT login—an
+OpenAI API key is not required. Install it once with `npm install -g @openai/codex`,
+then run `codex login` and choose ChatGPT. On Windows, this app automatically prefers
+the user-installed CLI over the desktop-app shim. The first click runs the existing
+summarizer through `codex exec`; it is a separate, non-interactive Codex task.
+
+The local dashboard permits only one summary run at a time and, by default, one
+new start every 10 minutes. Change the cooldown before starting the dashboard
+with `TIDY_SUMMARIZE_COOLDOWN_MINUTES` (for example, `5` for five minutes).
+
 ---
 
 ## Workflows

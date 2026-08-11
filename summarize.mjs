@@ -23,7 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { backupFile } from "./lib/backup.mjs";
-import { detectAiBackend, parseCustomArgs } from "./lib/ai-backend.mjs";
+import { codexInvocation, detectAiBackend, parseCustomArgs } from "./lib/ai-backend.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const IN = path.join(here, "data", "inbox.json");
@@ -218,7 +218,8 @@ function summarizeViaClaude(chat) {
 
 function summarizeViaCodex(chat) {
     const args = ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", ...(MODEL ? ["--model", MODEL] : []), "-"];
-    return runAiCommand("codex", args, buildPrompt(chat), "Codex");
+    const invocation = codexInvocation(args);
+    return runAiCommand(invocation.command, invocation.args, buildPrompt(chat), "Codex");
 }
 
 function summarizeViaCustom(chat) {
@@ -232,6 +233,7 @@ function summarizeViaCustom(chat) {
 const summarize = { "anthropic-api": summarizeViaApi, claude: summarizeViaClaude, codex: summarizeViaCodex, custom: summarizeViaCustom }[BACKEND];
 
 const inbox = JSON.parse(fs.readFileSync(IN, "utf8"));
+const manualTypes = fs.existsSync(TYPES) ? JSON.parse(fs.readFileSync(TYPES, "utf8")).types ?? {} : {};
 const previous = fs.existsSync(OUT) && !FORCE
     ? new Map(JSON.parse(fs.readFileSync(OUT, "utf8")).chats.map((c) => [c.id, c]))
     : new Map();
@@ -264,7 +266,7 @@ async function worker() {
 
         const prev = previous.get(chat.id);
         const previousFailed = prev?.ai && (prev.ai.unavailableReason || prev.ai.headline === "(error)" || /^Summarization failed:/i.test(prev.ai.summary || ""));
-        if (prev && prev.ai && !previousFailed && prev.mostRecentMessageDate === chat.mostRecentMessageDate) {
+        if (prev && prev.ai && !previousFailed && !manualTypes[chat.id] && prev.mostRecentMessageDate === chat.mostRecentMessageDate) {
             out[i] = { ...chat, ai: prev.ai };
             reused++;
         } else if (chat.messages.length === 0) {

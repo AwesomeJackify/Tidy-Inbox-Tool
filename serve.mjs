@@ -30,6 +30,15 @@ const PROPOSALS_FILE = dataFile("proposals.json");
 const TYPES_FILE = dataFile("ticket-types.json");
 const ACTIONS_FILE = process.env.TIDY_ACTIONS_FILE || dataFile("ticket-actions.json");
 const RELEASE_FOLLOWUPS_FILE = process.env.TIDY_RELEASE_FOLLOWUPS_FILE || dataFile("release-followups.json");
+const TRIAGES_FILE = dataFile("ticket-triages.json");
+const TIDY_CODEBASE = process.env.TIDY_CODEBASE || "C:\\Users\\Tidy\\Documents\\Code\\Tidy";
+const summarizeCooldownMinutes = Number(process.env.TIDY_SUMMARIZE_COOLDOWN_MINUTES ?? 10);
+const SUMMARIZE_COOLDOWN_MS = Math.max(0, Number.isFinite(summarizeCooldownMinutes) ? summarizeCooldownMinutes : 10) * 60 * 1000;
+const triageCooldownMinutes = Number(process.env.TIDY_TRIAGE_COOLDOWN_MINUTES ?? 2);
+const TRIAGE_COOLDOWN_MS = Math.max(0, Number.isFinite(triageCooldownMinutes) ? triageCooldownMinutes : 2) * 60 * 1000;
+const triageHourlyLimit = Math.max(1, Number(process.env.TIDY_TRIAGE_HOURLY_LIMIT ?? 12) || 12);
+const configuredUsageRemaining = Number(process.env.TIDY_AI_USAGE_REMAINING_PERCENT);
+const aiMinimumRemainingPercent = Math.max(0, Math.min(100, Number(process.env.TIDY_AI_MINIMUM_REMAINING_PERCENT ?? 20) || 20));
 
 // Current CRM token — starts from env, updatable at runtime via /api/token so a
 // mid-session expiry doesn't force a server restart. Used for /api/close (in-memory)
@@ -37,6 +46,12 @@ const RELEASE_FOLLOWUPS_FILE = process.env.TIDY_RELEASE_FOLLOWUPS_FILE || dataFi
 let currentToken = process.env.TIDY_TOKEN;
 let tokenRejected = false;
 let tokenVerifiedAt = null;
+let summarizeRunning = false;
+let summarizeLastStartedAt = null;
+const triageRunningTicketIds = new Set();
+let triageRunning = false;
+let triageLastStartedAt = null;
+const triageStartedAt = [];
 
 function crmTokenStatus() {
     if (!hasToken()) return { available: false, state: "missing", verifiedAt: null, reason: "No CRM refresh token or access token is set." };
@@ -105,12 +120,13 @@ function staffDetector(chats) {
 
 function readData() {
     const inbox = fs.existsSync(dataFile("inbox.json")) ? JSON.parse(fs.readFileSync(dataFile("inbox.json"), "utf8")) : { chats: [] };
-    const aiById = fs.existsSync(dataFile("enriched.json"))
-        ? new Map(JSON.parse(fs.readFileSync(dataFile("enriched.json"), "utf8")).chats.filter((c) => c.ai).map((c) => [c.id, c.ai]))
-        : new Map();
+    const enrichedChats = fs.existsSync(dataFile("enriched.json")) ? JSON.parse(fs.readFileSync(dataFile("enriched.json"), "utf8")).chats : [];
+    const previousById = new Map(enrichedChats.map((chat) => [chat.id, chat]));
+    const aiById = new Map(enrichedChats.filter((chat) => chat.ai).map((chat) => [chat.id, chat.ai]));
     const verdicts = fs.existsSync(dataFile("bug-verdicts.json")) ? JSON.parse(fs.readFileSync(dataFile("bug-verdicts.json"), "utf8")) : {};
     const manualTypes = fs.existsSync(TYPES_FILE) ? JSON.parse(fs.readFileSync(TYPES_FILE, "utf8")).types ?? {} : {};
     const actionStore = readTicketActions();
+    const triages = readTicketTriages().triages;
     const latestAction = new Map();
     for (const event of actionStore.events) {
         if (!event.ticketId || !event.at) continue;
@@ -180,7 +196,30 @@ function readData() {
     const ai = summarizationStatus();
     const crm = crmTokenStatus();
     const decisions = Object.fromEntries(Object.entries(actionStore.decisions).filter(([, value]) => value === "close" || value === "keep"));
-    return { syncedAt: inbox.syncedAt ?? inbox.fetchedAt ?? null, hasToken: hasToken(), crmAvailable: crm.available, crmState: crm.state, crmVerifiedAt: crm.verifiedAt, crmReason: crm.reason, aiAvailable: ai.available, aiSource: ai.source, decisions, chats };
+    // Match summarize.mjs exactly: tickets with no messages receive a local
+    // placeholder and do not call Codex; only new, changed, or failed tickets do.
+    const summarizeAiTickets = inbox.chats.filter((chat) => {
+        if (!(chat.messages ?? []).length) return false;
+        const previous = previousById.get(chat.id);
+        const failed = previous?.ai && (previous.ai.unavailableReason || previous.ai.headline === "(error)" || /^Summarization failed:/i.test(previous.ai.summary || ""));
+        return !previous?.ai || failed || Boolean(manualTypes[chat.id]) || previous.mostRecentMessageDate !== chat.mostRecentMessageDate;
+    }).length;
+    const summarizeRetryAt = summarizeLastStartedAt ? new Date(new Date(summarizeLastStartedAt).getTime() + SUMMARIZE_COOLDOWN_MS).toISOString() : null;
+    const triageRate = triageRateStatus();
+    return { syncedAt: inbox.syncedAt ?? inbox.fetchedAt ?? null, hasToken: hasToken(), crmAvailable: crm.available, crmState: crm.state, crmVerifiedAt: crm.verifiedAt, crmReason: crm.reason, aiAvailable: ai.available, aiSource: ai.source, aiUsage: aiUsageStatus(), triages, summarizeAiTickets, summarizeRunning, summarizeRetryAt, summarizeCooldownMinutes: SUMMARIZE_COOLDOWN_MS / 60000, triageRunning, triageRetryAt: triageRate?.retryAt?.toISOString() ?? null, triageRateMessage: triageRate?.error ?? null, triageCooldownMinutes: TRIAGE_COOLDOWN_MS / 60000, triageHourlyLimit, decisions, chats };
+}
+
+function aiUsageStatus() {
+    const remainingPercent = Number.isFinite(configuredUsageRemaining) && configuredUsageRemaining >= 0 && configuredUsageRemaining <= 100 ? configuredUsageRemaining : null;
+    return { remainingPercent, minimumPercent: aiMinimumRemainingPercent, blocked: remainingPercent !== null && remainingPercent <= aiMinimumRemainingPercent };
+}
+
+function triageRateStatus(now = Date.now()) {
+    while (triageStartedAt.length && now - triageStartedAt[0] >= 60 * 60 * 1000) triageStartedAt.shift();
+    if (triageRunning) return { error: "Another AI triage is already running on this host." };
+    if (triageLastStartedAt && now - new Date(triageLastStartedAt).getTime() < TRIAGE_COOLDOWN_MS) return { retryAt: new Date(new Date(triageLastStartedAt).getTime() + TRIAGE_COOLDOWN_MS), error: `AI triage is limited to one start every ${TRIAGE_COOLDOWN_MS / 60000} minutes.` };
+    if (triageStartedAt.length >= triageHourlyLimit) return { retryAt: new Date(triageStartedAt[0] + 60 * 60 * 1000), error: `AI triage is limited to ${triageHourlyLimit} runs per hour.` };
+    return null;
 }
 
 function readManualTypes() {
@@ -203,6 +242,17 @@ function writeTicketActions(store) {
     backupFile(ACTIONS_FILE);
     fs.mkdirSync(path.dirname(ACTIONS_FILE), { recursive: true });
     fs.writeFileSync(ACTIONS_FILE, JSON.stringify({ updatedAt: new Date().toISOString(), decisions: store.decisions, events: store.events }, null, 2));
+}
+
+function readTicketTriages() {
+    if (!fs.existsSync(TRIAGES_FILE)) return { triages: {} };
+    const data = JSON.parse(fs.readFileSync(TRIAGES_FILE, "utf8"));
+    return { triages: data.triages && typeof data.triages === "object" ? data.triages : {} };
+}
+
+function writeTicketTriages(triages) {
+    backupFile(TRIAGES_FILE);
+    fs.writeFileSync(TRIAGES_FILE, JSON.stringify({ updatedAt: new Date().toISOString(), triages }, null, 2));
 }
 
 function auditEvent({ ticketId, action, by, from = null, to = null, success = true, detail = "" }) {
@@ -284,6 +334,53 @@ function runScript(name, args = []) {
         proc.on("close", (code) => resolve({ ok: code === 0, code, output: out }));
         proc.on("error", (err) => resolve({ ok: false, code: -1, output: err.message }));
     });
+}
+
+function ticketTriagePrompt(chat) {
+    const messages = chat.messages ?? [];
+    const shown = messages.length <= 30 ? messages : [...messages.slice(0, 2), ...messages.slice(-28)];
+    const transcript = shown.map((message) => ({ from: message.fromSupport ? "Tidy support" : "Customer", internalNote: Boolean(message.isNote), date: message.date, text: String(message.text || "").slice(0, 1500) }));
+    return `You are triaging exactly one customer-support ticket for Tidy, an inventory/ERP product. You are running in the local Tidy codebase at ${TIDY_CODEBASE}. Read only relevant source files to ground the suggested solution; do not modify files, execute database commands, call network services, or make any changes. Use the current conversation as the primary evidence. Return ONLY a JSON object with exactly these string fields: eli5Summary, customerWants, suggestedSolution, sqlReason, sqlQuery. eli5Summary: 1-2 plain, jargon-free sentences explaining the issue. customerWants: one concise sentence. suggestedSolution: a practical next action, grounded in the conversation and code only when the code supports it; clearly say when more evidence is needed. sqlReason: explain briefly why a database check is or is not needed. sqlQuery: either empty string when no query is needed, or ONE safe SQL Server SELECT statement only. Format a non-empty query for easy review: uppercase SQL keywords; SELECT fields one per line with two-space indentation; put FROM, JOIN, WHERE, GROUP BY, HAVING, ORDER BY, and OFFSET/FETCH on their own lines; put AND/OR predicates on their own indented lines; use meaningful aliases. Never use INSERT, UPDATE, DELETE, MERGE, EXEC, CREATE, ALTER, DROP, TRUNCATE, transaction statements, comments, semicolons, multiple statements, dynamic SQL, or any non-SELECT command. Do not invent schema names, table names, or columns: only provide SQL when the local codebase provides a strong basis for it.\n\nTicket:\n${JSON.stringify({ code: chat.code, parties: chat.partiesDescription, subject: chat.title, lastActivity: chat.mostRecentMessageDate, messages: transcript })}`;
+}
+
+function formatTriageSql(sql) {
+    // This is deliberately a small layout formatter, not a SQL parser. It only
+    // touches text outside quoted literals, after the SELECT-only safety check.
+    const outsideStrings = (text, transform) => text.split(/('(?:''|[^'])*')/g).map((part, index) => index % 2 ? part : transform(part)).join("");
+    const splitTopLevel = (text) => {
+        const fields = [];
+        let start = 0;
+        let depth = 0, quoted = false;
+        for (let index = 0; index < text.length; index += 1) {
+            const char = text[index];
+            if (char === "'") { if (quoted && text[index + 1] === "'") { index += 1; continue; } quoted = !quoted; }
+            else if (!quoted && char === "(") depth += 1;
+            else if (!quoted && char === ")") depth = Math.max(0, depth - 1);
+            else if (!quoted && !depth && char === ",") { fields.push(text.slice(start, index).trim()); start = index + 1; }
+        }
+        fields.push(text.slice(start).trim());
+        return fields.filter(Boolean);
+    };
+    let formatted = outsideStrings(String(sql || "").trim(), (part) => part.replace(/\s+/g, " "));
+    formatted = outsideStrings(formatted, (part) => part
+        .replace(/^\s*select\b/i, "SELECT")
+        .replace(/\b(FROM|LEFT\s+(?:OUTER\s+)?JOIN|RIGHT\s+(?:OUTER\s+)?JOIN|FULL\s+(?:OUTER\s+)?JOIN|INNER\s+JOIN|CROSS\s+JOIN|JOIN|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|OFFSET|FETCH)\b/gi, (match) => `\n${match.toUpperCase().replace(/\s+/g, " ")}`)
+        .replace(/\b(AND|OR)\b/gi, (match) => `\n  ${match.toUpperCase()}`));
+    const fromIndex = formatted.search(/\nFROM\b/i);
+    if (fromIndex > 0) {
+        const fields = splitTopLevel(formatted.slice("SELECT".length, fromIndex));
+        formatted = `SELECT\n${fields.map((field) => `  ${field}`).join(",\n")}${formatted.slice(fromIndex)}`;
+    }
+    return formatted.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function cleanTicketTriage(value, chat, source) {
+    const text = (key) => String(value?.[key] ?? "").trim().slice(0, 12000);
+    const candidateSql = text("sqlQuery");
+    const unsafeSql = /;|--|\/\*|\*\/|\b(insert|update|delete|merge|exec(?:ute)?|create|alter|drop|truncate|grant|revoke|deny|backup|restore|dbcc|use|begin|commit|rollback)\b/i;
+    const sqlQuery = /^select\b/i.test(candidateSql) && !unsafeSql.test(candidateSql) ? formatTriageSql(candidateSql) : "";
+    const sqlReason = sqlQuery ? text("sqlReason") : candidateSql ? "The generated query was omitted because it was not a single safe SELECT statement." : text("sqlReason");
+    return { eli5Summary: text("eli5Summary"), customerWants: text("customerWants"), suggestedSolution: text("suggestedSolution"), sqlReason, sqlQuery, generatedAt: new Date().toISOString(), sourceLastMessageDate: chat.mostRecentMessageDate ?? null, source };
 }
 
 const body = (req) =>
@@ -441,8 +538,47 @@ const server = http.createServer(async (req, res) => {
             writeTicketActions(actions);
             return json(res, 200, { ok: true });
         }
+        if (req.method === "POST" && url.pathname === "/api/ticket-triage") {
+            const { id, regenerate, by } = await body(req);
+            const usage = aiUsageStatus();
+            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
+            const inbox = fs.existsSync(dataFile("inbox.json")) ? JSON.parse(fs.readFileSync(dataFile("inbox.json"), "utf8")) : { chats: [] };
+            const chat = inbox.chats.find((item) => item.id === id);
+            if (!chat) return json(res, 404, { ok: false, error: "Ticket not found." });
+            const store = readTicketTriages();
+            if (store.triages[id] && !regenerate) return json(res, 200, { ok: true, triage: store.triages[id], reused: true });
+            if (triageRunningTicketIds.has(id)) return json(res, 429, { ok: false, error: "AI triage is already running for this ticket." });
+            const rate = triageRateStatus();
+            if (rate) return json(res, 429, { ok: false, rateLimited: true, error: rate.error, retryAt: rate.retryAt?.toISOString() ?? null });
+            if (!fs.existsSync(TIDY_CODEBASE)) return json(res, 500, { ok: false, error: `The Tidy codebase was not found at ${TIDY_CODEBASE}.` });
+            triageRunningTicketIds.add(id);
+            triageRunning = true;
+            triageLastStartedAt = new Date().toISOString();
+            triageStartedAt.push(Date.now());
+            try {
+                const result = await runAiJson(ticketTriagePrompt(chat), { preferred: "codex", cwd: TIDY_CODEBASE });
+                const triage = cleanTicketTriage(result.value, chat, result.source);
+                if (!triage.eli5Summary || !triage.customerWants || !triage.suggestedSolution) throw new Error("Codex omitted a required triage field.");
+                store.triages[id] = triage;
+                writeTicketTriages(store.triages);
+                const actions = readTicketActions();
+                actions.events.push(auditEvent({ ticketId: id, action: "ticket_triage_generated", by, detail: regenerate ? "AI triage regenerated from the latest conversation." : "AI triage generated." }));
+                writeTicketActions(actions);
+                return json(res, 200, { ok: true, triage });
+            } catch (err) {
+                const actions = readTicketActions();
+                actions.events.push(auditEvent({ ticketId: id, action: "ticket_triage_failed", by, success: false, detail: err.message }));
+                writeTicketActions(actions);
+                return json(res, 200, { ok: false, error: err.message });
+            } finally {
+                triageRunningTicketIds.delete(id);
+                triageRunning = false;
+            }
+        }
         if (req.method === "POST" && url.pathname === "/api/proposals/draft") {
             const { ids } = await body(req);
+            const usage = aiUsageStatus();
+            if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
             if (!Array.isArray(ids) || !ids.length) return json(res, 400, { error: "Select at least one feature ticket." });
             const chats = proposalSources(ids.slice(0, 20));
             if (!chats.length) return json(res, 404, { error: "The selected tickets could not be found." });
@@ -648,11 +784,22 @@ const server = http.createServer(async (req, res) => {
             const name = url.pathname.slice("/api/run/".length);
             if (!RUNNABLE.has(name)) return json(res, 400, { error: `unknown script: ${name}` });
             const { by } = await body(req);
+            if (name === "summarize") {
+                const usage = aiUsageStatus();
+                if (usage.blocked) return json(res, 429, { ok: false, rateLimited: true, error: `AI use is locked because the configured Codex allowance is ${usage.remainingPercent}% (minimum is ${usage.minimumPercent}%).` });
+                const now = Date.now();
+                const retryAt = summarizeLastStartedAt ? new Date(new Date(summarizeLastStartedAt).getTime() + SUMMARIZE_COOLDOWN_MS) : null;
+                if (summarizeRunning) return json(res, 429, { ok: false, rateLimited: true, error: "AI summarisation is already running on this host. Please wait for it to finish.", retryAt: retryAt?.toISOString() ?? null });
+                if (retryAt && now < retryAt.getTime()) return json(res, 429, { ok: false, rateLimited: true, error: `AI summarisation is limited to one start every ${SUMMARIZE_COOLDOWN_MS / 60000} minutes. Try again after ${retryAt.toLocaleTimeString()}.`, retryAt: retryAt.toISOString() });
+                summarizeRunning = true;
+                summarizeLastStartedAt = new Date().toISOString();
+            }
             if (name === "sync") {
                 const crm = crmTokenStatus();
                 if (!crm.available) return json(res, 400, { ok: false, error: crm.reason, authFailed: true });
             }
             const result = await runScript(name);
+            if (name === "summarize") summarizeRunning = false;
             if (name === "sync" && result.ok) {
                 tokenRejected = false;
                 tokenVerifiedAt = new Date().toISOString();
@@ -691,6 +838,10 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
   .b-staff .who{color:#3f6fa8} .b-cust .who{color:#a1926f}
   .context-preview{min-width:260px;text-align:left;border-radius:8px;padding:4px 6px;margin:-4px -6px;cursor:pointer}
   .context-preview:hover{background:#f1f5f9}.context-preview:focus{outline:2px solid #93c5fd}
+  tr.cursor-pointer>td{transition:background-color .12s ease}tr.cursor-pointer:hover>td{background:#e5e7eb!important}
+  .ticket-triage-panel{background:#86efac;border-color:#16a34a;max-width:min(760px,100%)}
+  .ticket-triage-panel:not([open]){display:inline-block}.ticket-triage-panel:not([open]) summary{white-space:nowrap}
+  .ticket-triage-panel[open]{display:block;width:100%;max-width:none}.sql-triage-query{width:100%;min-height:12rem}
   .conversation-note{background:#fff8d6;border:1px solid #f2d675;border-left:4px solid #d9a500}
   .btn-success:disabled{background:#15803d!important;border-color:#15803d!important;color:#fff!important;opacity:.6!important}
   .ticket-type-picker[open]>.dropdown-content{position:fixed!important;z-index:1000!important}
@@ -735,7 +886,7 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
 <dialog id="conversationModal" class="modal">
   <div class="modal-box max-w-4xl h-[82vh] p-0 overflow-hidden flex flex-col">
     <div class="flex items-start gap-3 p-4 border-b bg-base-100 z-10">
-      <div class="flex-1"><h3 id="conversationTitle" class="font-bold text-lg">Conversation</h3><div id="conversationMeta" class="text-xs opacity-55"></div></div>
+      <div class="flex-1"><div class="flex items-center gap-1"><h3 id="conversationTitle" class="font-bold text-lg">Conversation</h3><button class="btn btn-ghost btn-xs" onclick="copyConversationLink()" title="Copy direct ticket link" aria-label="Copy direct ticket link">🔗</button></div><div id="conversationMeta" class="text-xs opacity-55"></div></div>
       <div id="conversationType"></div>
       <a id="conversationReply" class="btn btn-sm btn-primary" target="_blank">Reply in CRM ↗</a>
       <form method="dialog"><button class="btn btn-sm btn-ghost" aria-label="Close conversation">✕</button></form>
@@ -758,6 +909,7 @@ const PAGE = /* html */ `<!doctype html><html data-theme="light"><head><meta cha
 let DATA={chats:[]}, TAB='dashboard', RELEASE_FOLLOWUPS=null, EDIT_RELEASE=null;
 let PROPOSALS=null, PROPVIEW='candidates', EDITING_PROPOSAL=null;
 let TOKEN_CHECK_IN_FLIGHT=false,TOKEN_CHECK_TIMER=null,TOKEN_CHECK_DEADLINE=0;
+let OPENED_LINKED_TICKET=null;
 const PROPSELECT=new Set();
 const RSTORE='tidy-review';
 let REVIEW=Object.assign({filter:'bug',mode:'cards',idx:0,decisions:{}}, JSON.parse(localStorage.getItem(RSTORE)||'{}'));
@@ -788,6 +940,11 @@ function positionTypeMenu(details){
   if(!details.open)return;
   requestAnimationFrame(()=>{const summary=details.querySelector('summary'),menu=details.querySelector('.dropdown-content');if(!summary||!menu)return;const rect=summary.getBoundingClientRect(),width=160;menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-8,rect.bottom+4)+'px';menu.style.left=Math.max(8,Math.min(window.innerWidth-width-8,rect.right-width))+'px';});
 }
+function conversationTypePicker(c){
+  const current=ticketType(c);
+  const colors={bug:'bg-error border-error text-error-content',feature:'bg-success border-success text-success-content','not sure':'bg-warning border-warning text-warning-content'};
+  return \`<select class="select select-xs rounded-full font-semibold \${colors[current]||'select-bordered'}" aria-label="Ticket type" onchange="setTicketType('\${c.id}',this.value)"><option value="bug" \${current==='bug'?'selected':''}>Bug</option><option value="feature" \${current==='feature'?'selected':''}>Feature</option><option value="not sure" \${current==='not sure'?'selected':''}>Not sure</option></select>\`;
+}
 function typeBadge(c){
   const type=ticketType(c), labels={bug:'Bug',feature:'Feature','not sure':'Not sure'}, colors={bug:'badge-error',feature:'badge-success','not sure':'badge-warning'};
   return \`<span class="badge badge-sm \${colors[type]||'badge-ghost'}">\${labels[type]||'Unclassified'}</span>\`;
@@ -806,7 +963,7 @@ async function setTicketType(id,type){
   const result=await (await fetch('/api/type',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,type,by:auditActor()})})).json();
   if(!result.ok)return alert(result.error||'The ticket type could not be saved.');
   const chat=DATA.chats.find(c=>c.id===id);if(chat){chat.manualType=result.type;applyLocalActivity(chat,result.event);}render();
-  const modal=document.getElementById('conversationModal');if(modal.open&&chat)document.getElementById('conversationType').innerHTML=typePicker(chat);
+  const modal=document.getElementById('conversationModal');if(modal.open&&chat)document.getElementById('conversationType').innerHTML=conversationTypePicker(chat);
 }
 function applyLocalActivity(chat,event){
   if(!chat||!event)return;chat.actionLast=event.at;chat.activityLast=event.at;chat.activitySource='app';chat.latestAction=event;
@@ -817,20 +974,71 @@ function contextHtml(c,max=180){
   const label=hasAi?'AI summary':c.opening?'Opening message · '+(c.opening.sender||'customer'):'Ticket context';
   const seen=c.leftOnRead?' border border-error rounded-md p-2':'';
   const title=c.leftOnRead?'Left on read':'';
-  return \`<button type="button" class="context-preview w-full\${seen}" title="\${title}" onclick="openConversation('\${c.id}')"><div class="text-xs opacity-50">\${esc(label)} · click to view conversation</div><div>\${esc(compact)}\${!hasAi&&c.opening&&c.opening.text.length>max?'…':''}</div></button>\`;
+  return \`<div class="context-preview w-full\${seen}" title="\${title}"><div class="text-xs opacity-50">\${esc(label)}</div><div>\${esc(compact)}\${!hasAi&&c.opening&&c.opening.text.length>max?'…':''}</div></div>\`;
+}
+function openTicketFromRow(event,id){
+  if(event.target.closest('a,button,select,input,label,summary,details'))return;
+  openConversation(id);
+}
+function ticketTriageHtml(id){
+  const t=DATA.triages?.[id];
+  const triageLocked=DATA.aiUsage?.blocked||DATA.triageRunning||DATA.triageRateMessage;
+  const triageReason=DATA.aiUsage?.blocked?\`AI use is locked: configured allowance is \${DATA.aiUsage.remainingPercent}% (minimum \${DATA.aiUsage.minimumPercent}%).\`:DATA.triageRateMessage||'';
+  const triageButton=(regenerate)=>{const label=regenerate?'Re-triage from latest conversation':'Generate AI triage';return triageLocked?\`<span class="inline-block" title="\${esc(triageReason||'AI triage is temporarily unavailable.')}"><button class="btn btn-sm btn-disabled opacity-50" disabled>\${label}</button></span>\`:\`<button class="btn btn-sm \${regenerate?'btn-outline':'btn-primary'}" onclick="generateTicketTriage('\${id}',\${regenerate})">\${label}</button>\`;};
+  if(!t)return \`<details class="ticket-triage-panel rounded-box border"><summary class="cursor-pointer p-3 font-semibold">AI triage <span class="font-normal text-sm opacity-60">Not generated</span></summary><div class="px-3 pb-3">\${triageButton(false)}</div></details>\`;
+  const sql=t.sqlQuery?\`<details class="mt-3 border border-base-300 rounded-lg w-full"><summary class="cursor-pointer p-3 text-sm font-semibold">SQL triage query <span class="font-normal opacity-60">(read-only SELECT)</span></summary><div class="px-3 pb-3"><div class="flex items-center justify-between gap-3 mb-2"><p class="text-sm opacity-70">\${esc(t.sqlReason||'')}</p><button class="btn btn-xs btn-ghost shrink-0" onclick="copyTriageSql('\${id}')">Copy SQL</button></div><pre class="sql-triage-query text-xs leading-5 bg-neutral text-neutral-content p-3 rounded-lg overflow-auto whitespace-pre font-mono">\${esc(t.sqlQuery)}</pre></div></details>\`:\`<details class="mt-3 border border-base-300 rounded-lg"><summary class="cursor-pointer p-3 text-sm font-semibold">SQL triage query <span class="font-normal opacity-60">(not required)</span></summary><p class="px-3 pb-3 text-sm opacity-70">\${esc(t.sqlReason||'No database query is required for this ticket.')}</p></details>\`;
+  return \`<details class="ticket-triage-panel rounded-box border"><summary class="cursor-pointer p-3 font-semibold">AI triage <span class="font-normal text-sm opacity-60">Generated \${day(t.generatedAt)}</span></summary><div class="px-3 pb-3"><div class="grid gap-3"><div><div class="text-xs font-semibold uppercase opacity-55">Explain like I’m five</div><div class="whitespace-pre-wrap">\${esc(t.eli5Summary)}</div></div><div><div class="text-xs font-semibold uppercase opacity-55">What the customer wants</div><div class="whitespace-pre-wrap">\${esc(t.customerWants)}</div></div><div><div class="text-xs font-semibold uppercase opacity-55">Suggested solution</div><div class="whitespace-pre-wrap">\${esc(t.suggestedSolution)}</div></div></div>\${sql}<div class="mt-3">\${triageButton(true)}</div></div></details>\`;
+}
+function copyTriageSql(id){
+  const sql=DATA.triages?.[id]?.sqlQuery||'';
+  if(!sql)return;
+  if(!navigator.clipboard?.writeText){prompt('Copy SQL query:',sql);return;}
+  navigator.clipboard.writeText(sql).then(()=>alert('SQL query copied.')).catch(()=>prompt('Copy SQL query:',sql));
+}
+async function generateTicketTriage(id,regenerate){
+  const holder=document.getElementById('ticketTriage'),log=document.getElementById('log'),chat=DATA.chats.find(c=>c.id===id),label=chat?.code||id;
+  document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ AI triage '+label+(regenerate?' (re-triage)':'')+' …\\nPreparing ticket context…\\nCodex is reviewing the conversation and relevant Tidy code in read-only mode…\\n';log.scrollTop=log.scrollHeight;
+  if(holder)holder.innerHTML='<div class="p-4 bg-base-100 rounded-box border border-base-300"><span class="loading loading-spinner loading-sm mr-2"></span>Generating AI triage from this ticket and the Tidy codebase…</div>';
+  const started=Date.now(),progress=setInterval(()=>{const seconds=Math.floor((Date.now()-started)/1000);log.textContent+='Still generating AI triage ('+seconds+'s)…\\n';log.scrollTop=log.scrollHeight;},10000);
+  try{const result=await (await fetch('/api/ticket-triage',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,regenerate,by:auditActor()})})).json();if(!result.ok)throw new Error(result.error||'AI triage could not be generated.');DATA.triages=DATA.triages||{};DATA.triages[id]=result.triage;if(holder)holder.innerHTML=ticketTriageHtml(id);log.textContent+='AI triage saved for '+label+' in '+Math.ceil((Date.now()-started)/1000)+'s.\\n';log.scrollTop=log.scrollHeight;}catch(error){if(holder)holder.innerHTML=\`<div class="alert alert-error mt-5">\${esc(error.message||error)}</div>\`;log.textContent+='AI triage failed: '+(error.message||error)+'\\n';log.scrollTop=log.scrollHeight;}finally{clearInterval(progress);}
 }
 async function openConversation(id){
+  const localChat=DATA.chats.find(c=>c.id===id);
+  const url=new URL(window.location.href),ticket=localChat?.code||id;
+  if(url.searchParams.get('ticket')!==ticket){url.searchParams.set('ticket',ticket);history.pushState({},'',url);}
   const modal=document.getElementById('conversationModal'), content=document.getElementById('conversationContent');
   document.getElementById('conversationTitle').textContent='Conversation';document.getElementById('conversationMeta').textContent='Loading…';content.innerHTML='<div class="flex justify-center p-8"><span class="loading loading-spinner loading-lg"></span></div>';modal.showModal();
   const chat=await (await fetch('/api/chat/'+encodeURIComponent(id))).json();
   if(chat.error){content.innerHTML=\`<div class="alert alert-error">\${esc(chat.error)}</div>\`;return;}
   document.getElementById('conversationTitle').textContent=chat.title||'(no subject)';document.getElementById('conversationMeta').textContent=chat.parties||'';document.getElementById('conversationReply').href=chat.url;
-  const localChat=DATA.chats.find(c=>c.id===id);document.getElementById('conversationType').innerHTML=localChat?typePicker(localChat):'';
-  content.innerHTML=(chat.messages||[]).map(m=>m.note
+  document.getElementById('conversationType').innerHTML=localChat?conversationTypePicker(localChat):'';
+  const messagesHtml=(chat.messages||[]).map(m=>m.note
     ? \`<div class="conversation-note rounded-lg p-3 mb-3"><div class="text-[11px] font-semibold mb-1">Internal note · \${esc(m.sender||'')} · \${day(m.date)}</div><div class="whitespace-pre-wrap text-sm">\${esc(m.text||'(empty)')}</div></div>\`
     : \`<div class="bubble \${m.staff?'b-staff':'b-cust'} mb-3"><div class="who text-[11px] font-semibold mb-1">\${esc(m.sender||'')} · \${m.staff?'Tidy':'customer'} · \${day(m.date)}</div>\${esc(m.text||'(empty)')}</div>\`).join('')||'<div class="opacity-60">No messages in this ticket.</div>';
+  content.innerHTML=\`<div>\${messagesHtml}</div><div id="ticketTriage" class="sticky bottom-0 z-10 mt-5">\${ticketTriageHtml(id)}</div>\`;
   content.scrollTop=content.scrollHeight;
 }
+
+function copyConversationLink(){
+  const link=window.location.href;
+  if(!navigator.clipboard?.writeText)return prompt('Copy this direct ticket link:',link);
+  navigator.clipboard.writeText(link).then(()=>alert('Direct ticket link copied.')).catch(()=>prompt('Copy this direct ticket link:',link));
+}
+function openLinkedTicket(){
+  const ticket=new URLSearchParams(window.location.search).get('ticket');
+  if(!ticket||ticket===OPENED_LINKED_TICKET||document.getElementById('conversationModal').open)return;
+  const chat=DATA.chats.find(c=>c.id===ticket||c.code===ticket);
+  if(!chat)return;
+  OPENED_LINKED_TICKET=ticket;
+  openConversation(chat.id);
+}
+const conversationModal=document.getElementById('conversationModal');
+conversationModal.addEventListener('close',()=>{
+  const url=new URL(window.location.href);
+  if(url.searchParams.has('ticket')){url.searchParams.delete('ticket');history.replaceState({},'',url);}
+  OPENED_LINKED_TICKET=null;
+});
+window.addEventListener('popstate',()=>{OPENED_LINKED_TICKET=null;openLinkedTicket();});
 
 async function load(){ DATA=await (await fetch('/api/data')).json();
   if(!localStorage.getItem('tidy-actions-migrated')){
@@ -843,10 +1051,29 @@ async function load(){ DATA=await (await fetch('/api/data')).json();
   document.getElementById('synced').textContent = DATA.syncedAt? 'synced '+day(DATA.syncedAt):'no data — run Sync';
   paintTokenStatus();
   updateSyncState();
-  const summarize=document.getElementById('summarizeTool'); summarize.disabled=!DATA.aiAvailable;
-  summarize.classList.toggle('opacity-40',!DATA.aiAvailable);
-  document.getElementById('summarizeHint').textContent=DATA.aiAvailable?'Available via '+DATA.aiSource+' · replaces manual ticket types':'Unavailable — configure or sign in to an AI provider';
+  const summarize=document.getElementById('summarizeTool');
+  const summarizeHint=document.getElementById('summarizeHint');
+  const retryAt=DATA.summarizeRetryAt?new Date(DATA.summarizeRetryAt):null, waitMs=retryAt?retryAt-Date.now():0;
+  const waiting=waitMs>0;
+  summarize.disabled=!DATA.aiAvailable||DATA.summarizeRunning||waiting;
+  summarize.classList.toggle('opacity-40',summarize.disabled);
+  if(!DATA.aiAvailable){
+    summarizeHint.textContent='Unavailable — the host administrator must sign in to Codex on this PC';
+    summarize.title='Staff do not sign in here. Ask the host administrator to sign in to Codex on the host PC.';
+  }else if(DATA.summarizeRunning){
+    summarizeHint.textContent='AI summarisation is running on this host. Please wait.';
+    summarize.title='Only one AI summarisation can run at a time.';
+  }else if(waiting){
+    const mins=Math.max(1,Math.ceil(waitMs/60000));
+    summarizeHint.textContent='Rate limited — available again in about '+mins+' minute'+(mins===1?'':'s')+'.';
+    summarize.title='The host allows one AI summary run every '+DATA.summarizeCooldownMinutes+' minutes.';
+  }else{
+    const n=DATA.summarizeAiTickets||0;
+    summarizeHint.textContent=n?'Available via '+DATA.aiSource+' · '+n+' new or changed ticket'+(n===1?' needs':'s need')+' AI':'Available via '+DATA.aiSource+' · no tickets currently need AI';
+    summarize.title=n?'Only these '+n+' new, changed, or failed tickets are sent to Codex. Unchanged summaries are reused.':'No ticket transcript will be sent to Codex; the existing summaries are already current.';
+  }
   render();
+  openLinkedTicket();
   if(DATA.hasToken&&DATA.crmState==='unverified')refreshTokenStatus();
 }
 function paintTokenStatus(checking=false){
@@ -941,8 +1168,8 @@ function renderDashboard(){
     <div class="card bg-base-100 shadow-sm mb-4"><div class="card-body p-4"><div class="flex items-start justify-between gap-3"><div><h2 class="font-semibold">Clients needing attention</h2><p class="text-xs opacity-50">Ranked by customer-waiting tickets, oldest wait, and total open load—not sentiment.</p></div></div>
       <div class="mt-3">\${attention.length?attention.map(x=>\`<div class="grid grid-cols-[minmax(130px,1fr)_2fr_auto] gap-3 items-center mb-3"><div class="font-medium truncate" title="\${esc(x.name)}">\${esc(x.name)}</div><div class="h-3 bg-base-200 rounded-full overflow-hidden"><div class="h-full bg-red-400 rounded-full" style="width:\${Math.max(4,x.score/Math.max(...attention.map(a=>a.score))*100)}%"></div></div><div class="text-xs text-right whitespace-nowrap"><b>\${x.waiting}</b> waiting · \${x.open} open · oldest \${x.oldest}d</div></div>\`).join(''):'<div class="text-sm opacity-60">No clients are currently waiting on Tidy.</div>'}</div>
     </div>
-    <div class="card bg-base-100 shadow-sm"><div class="card-body p-0"><div class="p-4 pb-2"><h2 class="font-semibold">Oldest customer-waiting tickets</h2><p class="text-xs opacity-50">Click Context to open the full conversation.</p></div><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Waiting</th><th>Client</th><th>Type</th><th>Context</th><th></th></tr></thead><tbody>
-      \${oldest.map(c=>\`<tr><td class="font-semibold whitespace-nowrap \${idleDays(c.last)>=14?'text-error':idleDays(c.last)>=7?'text-warning':''}">\${idleDays(c.last)}d</td><td>\${esc(clientName(c))}</td><td>\${typeBadge(c)}</td><td class="max-w-xl">\${contextHtml(c,180)}</td><td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')||'<tr><td colspan="5" class="p-4 opacity-60">Nobody is waiting on Tidy right now.</td></tr>'}
+    <div class="card bg-base-100 shadow-sm"><div class="card-body p-0"><div class="p-4 pb-2"><h2 class="font-semibold">Oldest customer-waiting tickets</h2><p class="text-xs opacity-50">Click a ticket row to open its full conversation.</p></div><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th>Waiting</th><th>Client</th><th>Type</th><th>Context</th><th></th></tr></thead><tbody>
+      \${oldest.map(c=>\`<tr class="hover cursor-pointer" onclick="openTicketFromRow(event,'\${c.id}')"><td class="font-semibold whitespace-nowrap \${idleDays(c.last)>=14?'text-error':idleDays(c.last)>=7?'text-warning':''}">\${idleDays(c.last)}d</td><td>\${esc(clientName(c))}</td><td>\${typeBadge(c)}</td><td class="max-w-xl">\${contextHtml(c,180)}</td><td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')||'<tr><td colspan="5" class="p-4 opacity-60">Nobody is waiting on Tidy right now.</td></tr>'}
       </tbody></table></div></div></div>\`;
 }
 
@@ -1017,7 +1244,7 @@ function outstandingStageBar(){
     <div class="ml-auto flex gap-2"><button class="btn btn-sm btn-ghost" onclick="clearOutstanding()">Clear</button><button class="btn btn-sm btn-primary" onclick="confirmOutstanding()">Confirm all</button></div></div>\`;
 }
 function outstandingRow(c){
-  return '<tr class="hover'+(pendingOutstanding[c.id]?' bg-base-200/60':'')+'">'
+  return '<tr class="hover cursor-pointer'+(pendingOutstanding[c.id]?' bg-base-200/60':'')+'" data-ticket-id="'+esc(c.id)+'" onclick="openTicketFromRow(event,this.dataset.ticketId)">'
     +'<td class="font-semibold whitespace-nowrap">'+esc(c.code||'—')+'</td><td class="opacity-60 whitespace-nowrap">'+day(c.last)+'</td><td>'+esc(c.parties||'')+'</td><td>'+typePicker(c)+'</td><td class="max-w-md">'+contextHtml(c,150)+'</td>'
     +'<td>'+outstandingDecisionPicker(c)+'</td>'
     +'<td><a class="link link-primary whitespace-nowrap" href="'+c.url+'" target="_blank">reply in CRM ↗</a></td></tr>';
@@ -1111,7 +1338,7 @@ function proposalToggle(id,on){if(on)PROPSELECT.add(id);else PROPSELECT.delete(i
 function renderProposalCandidates(candidates,drafts=[]){
   const body=document.getElementById('proposalBody');
   body.innerHTML=\`<div class="card bg-base-100 shadow-sm"><div class="card-body p-4"><div class="flex items-center gap-2 flex-wrap mb-2"><span id="propSelected" class="text-sm font-semibold">\${PROPSELECT.size} selected</span><span class="text-xs opacity-55">\${DATA.aiAvailable?'AI available via '+esc(DATA.aiSource):'No authenticated AI provider'}</span><button class="btn btn-sm btn-primary ml-auto" onclick="draftProposalWithAi()" aria-disabled="\${!DATA.aiAvailable}" title="\${DATA.aiAvailable?'Draft using '+esc(DATA.aiSource):'Configure or sign in to an AI provider first'}" \${DATA.aiAvailable?'':'disabled'}>✦ Draft selected</button><button class="btn btn-sm btn-success" onclick="draftAllFeatureProposals()" aria-disabled="\${!DATA.aiAvailable}" title="Draft every unassigned Feature request and send it to Boss review" \${DATA.aiAvailable?'':'disabled'}>✦ Draft all for boss review</button><button class="btn btn-sm" onclick="beginManualProposal()">Create blank proposal</button></div>\${DATA.aiAvailable?'':'<div class="alert py-2 text-sm mb-2">AI drafting is unavailable, but proposals can still be created manually.</div>'}<div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th></th><th>Feature request</th><th>Client</th><th>Context</th><th></th></tr></thead><tbody>
-  \${candidates.sort((a,b)=>new Date(b.last||0)-new Date(a.last||0)).map(c=>\`<tr><td><input type="checkbox" class="checkbox checkbox-sm" \${PROPSELECT.has(c.id)?'checked':''} onchange="proposalToggle('\${c.id}',this.checked)"></td><td><div class="font-semibold">\${esc(c.title||c.ai?.headline||'Feature request')}</div><div class="text-xs opacity-50">\${day(c.last)}</div></td><td>\${esc(clientName(c))}</td><td class="max-w-xl">\${contextHtml(c,160)}</td><td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')||'<tr><td colspan="5" class="p-5 opacity-60">No feature requests are waiting for a proposal.</td></tr>'}
+  \${candidates.sort((a,b)=>new Date(b.last||0)-new Date(a.last||0)).map(c=>\`<tr class="hover cursor-pointer" onclick="openTicketFromRow(event,'\${c.id}')"><td><input type="checkbox" class="checkbox checkbox-sm" \${PROPSELECT.has(c.id)?'checked':''} onchange="proposalToggle('\${c.id}',this.checked)"></td><td><div class="font-semibold">\${esc(c.title||c.ai?.headline||'Feature request')}</div><div class="text-xs opacity-50">\${day(c.last)}</div></td><td>\${esc(clientName(c))}</td><td class="max-w-xl">\${contextHtml(c,160)}</td><td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">reply in CRM ↗</a></td></tr>\`).join('')||'<tr><td colspan="5" class="p-5 opacity-60">No feature requests are waiting for a proposal.</td></tr>'}
   </tbody></table></div><div id="proposalStatus" class="text-sm mt-2"></div></div></div>\`;
   if(drafts.length){
     const cards=drafts.slice().sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).map(p=>\`<div class="card bg-base-100 shadow-sm mb-3"><div class="card-body p-4">\${proposalDetails(p,true)}<div class="card-actions justify-end mt-3"><button class="btn btn-sm" onclick="EDITING_PROPOSAL=PROPOSALS.find(x=>x.id==='\${p.id}');PROPVIEW='edit';renderProposals()">Edit draft</button><button class="btn btn-sm btn-error btn-outline" onclick="deleteProposal('\${p.id}')">Delete</button></div></div></div>\`).join('');
@@ -1291,7 +1518,7 @@ function kbSearch(){
 
 /* ---------- Durable ticket audit history ---------- */
 let AUDIT_EVENTS=[];
-const auditLabels={status_changed:'Status changed',status_cleared:'Status cleared',manual_type_changed:'Type changed',manual_type_cleared:'Manual type cleared',crm_closed:'Closed in CRM',crm_close_failed:'CRM close failed',crm_reopened:'Reopened in CRM',crm_reopen_failed:'CRM reopen failed',proposal_status_changed:'Proposal status changed',proposal_deleted:'Proposal deleted',release_pr_mapped:'PR mapped',release_pr_unmapped:'PR unmapped',release_customer_responded:'Release reply sent',release_response_reopened:'Release reply reopened',release_closed:'Release closed',release_close_failed:'Release close failed','draft-feature-proposals_completed':'Feature proposals drafted','draft-feature-proposals_failed':'Feature proposal drafting failed',sync_completed:'Sync completed',sync_failed:'Sync failed',summarize_completed:'Summarise completed',summarize_failed:'Summarise failed',report_completed:'Report rebuilt',report_failed:'Report failed',excel_exported:'Excel exported',excel_export_failed:'Excel export failed'};
+const auditLabels={status_changed:'Status changed',status_cleared:'Status cleared',manual_type_changed:'Type changed',manual_type_cleared:'Manual type cleared',ticket_triage_generated:'AI triage generated',ticket_triage_failed:'AI triage failed',crm_closed:'Closed in CRM',crm_close_failed:'CRM close failed',crm_reopened:'Reopened in CRM',crm_reopen_failed:'CRM reopen failed',proposal_status_changed:'Proposal status changed',proposal_deleted:'Proposal deleted',release_pr_mapped:'PR mapped',release_pr_unmapped:'PR unmapped',release_customer_responded:'Release reply sent',release_response_reopened:'Release reply reopened',release_closed:'Release closed',release_close_failed:'Release close failed','draft-feature-proposals_completed':'Feature proposals drafted','draft-feature-proposals_failed':'Feature proposal drafting failed',sync_completed:'Sync completed',sync_failed:'Sync failed',summarize_completed:'Summarise completed',summarize_failed:'Summarise failed',report_completed:'Report rebuilt',report_failed:'Report failed',excel_exported:'Excel exported',excel_export_failed:'Excel export failed'};
 async function renderAudit(){
   const v=document.getElementById('view');
   v.innerHTML='<div class="flex justify-center p-10"><span class="loading loading-spinner loading-lg"></span></div>';
@@ -1321,28 +1548,39 @@ function renderInbox(){
     <input id="q" class="input input-bordered input-sm" placeholder="search tickets and conversations…" oninput="inboxRows()" value="\${esc(window._q||'')}">
     <div class="flex gap-1.5 flex-wrap" aria-label="Filter by type">\${types.map(type=>\`<label class="flex items-center gap-1.5 border border-base-300 rounded-lg px-2 py-1 bg-base-100 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div>
     <select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select>
-    <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input id="iu" type="checkbox" class="checkbox checkbox-xs" \${window._iu?'checked':''} onchange="inboxRows()"> Include undecided</label>
     <span class="text-sm opacity-60" id="rowcount"></span></div><div id="tbl"></div>\`;
   inboxRows();
 }
+function setInboxSort(key){
+  if(window._inboxSort===key)window._inboxSortDirection=window._inboxSortDirection==='asc'?'desc':'asc';
+  else{window._inboxSort=key;window._inboxSortDirection=key==='activity'?'desc':'asc';}
+  inboxRows();
+}
+function inboxSortHeader(key,label){
+  const active=window._inboxSort===key,dir=window._inboxSortDirection==='desc'?'↓':'↑';
+  return \`<button class="font-semibold hover:underline" onclick="setInboxSort('\${key}')" title="Sort by \${label}">\${label}\${active?' '+dir:''}</button>\`;
+}
 function inboxRows(){
   window._q=document.getElementById('q').value.toLowerCase();
-  window._fts=[...document.querySelectorAll('.ift:checked')].map(el=>el.value); window._fs=document.getElementById('fs').value;window._iu=document.getElementById('iu').checked;
+  window._fts=[...document.querySelectorAll('.ift:checked')].map(el=>el.value); window._fs=document.getElementById('fs').value;
   let rows=DATA.chats.filter(c=>{
     if(window._fs==='open'&&c.status!=='open')return false;
     if(window._fs==='closed'&&c.status!=='closed')return false;
     const decision=REVIEW.decisions[c.id];
-    if(!window._iu&&c.status==='open'&&!['close','keep'].includes(decision))return false;
     if(window._fts.length<3&&!window._fts.includes(ticketType(c)))return false;
     if(window._q){const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.headline||'')+' '+(c.ai?.summary||'')+' '+(c.conversationSearch||'')).toLowerCase();if(!hay.includes(window._q))return false;}
     return true;
-  }).sort((a,b)=>(window._inboxOrder?.get(a.id)??Number.MAX_SAFE_INTEGER)-(window._inboxOrder?.get(b.id)??Number.MAX_SAFE_INTEGER));
-  document.getElementById('rowcount').textContent=rows.length+(window._iu?' tickets':' managed tickets');
+  }).sort((a,b)=>{
+    const key=window._inboxSort,dir=window._inboxSortDirection==='desc'?-1:1;
+    if(key){const value=(chat)=>key==='activity'?new Date(chat.activityLast||chat.last||0).getTime():key==='type'?ticketType(chat):key==='from'?(chat.parties||''):(chat.code||'');const av=value(a),bv=value(b);const compared=typeof av==='number'?av-bv:String(av).localeCompare(String(bv),undefined,{sensitivity:'base'});if(compared)return compared*dir;}
+    return (window._inboxOrder?.get(a.id)??Number.MAX_SAFE_INTEGER)-(window._inboxOrder?.get(b.id)??Number.MAX_SAFE_INTEGER);
+  });
+  document.getElementById('rowcount').textContent=rows.length+' tickets';
   const stColor=s=>s==='open'?'text-success font-semibold':s==='deleted'?'text-error':'opacity-50';
   const manageCell=c=>c.status==='open'?decisionPicker(c):c.status==='closed'?\`<button class="btn btn-xs btn-success \${DATA.crmAvailable?'':'opacity-60'}" onclick="reopenTicket('\${c.id}')" title="\${DATA.crmAvailable?'Reopen this ticket in the CRM':esc(DATA.crmReason||'CRM access unavailable')}">Reopen</button>\`:'—';
    document.getElementById('tbl').innerHTML=\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
-    <thead><tr><th>Ticket</th><th>Last activity</th><th>From</th><th>Headline</th><th>Type</th><th>Manage</th><th>Status</th><th>Context</th><th>CRM</th></tr></thead><tbody>
-    \${rows.map(c=>\`<tr class="hover \${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'bg-base-200 opacity-60':''}" title="\${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'Pending close — remains here until the CRM confirms closure':''}"><td class="font-mono text-xs whitespace-nowrap">\${esc(c.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(c.activityLast||c.last)}</div>\${c.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(c.parties||'')}</td>
+    <thead><tr><th>\${inboxSortHeader('ticket','Ticket')}</th><th>\${inboxSortHeader('activity','Last activity')}</th><th>\${inboxSortHeader('from','From')}</th><th>Headline</th><th>\${inboxSortHeader('type','Type')}</th><th>Manage</th><th>Status</th><th>Context</th><th>CRM</th></tr></thead><tbody>
+    \${rows.map(c=>\`<tr class="hover cursor-pointer \${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'bg-base-200 opacity-60':''}" title="\${c.status==='open'&&REVIEW.decisions[c.id]==='close'?'Pending close — remains here until the CRM confirms closure':''}" onclick="openTicketFromRow(event,'\${c.id}')"><td class="font-mono text-xs whitespace-nowrap">\${esc(c.code||'')}</td><td class="whitespace-nowrap"><div class="opacity-60">\${day(c.activityLast||c.last)}</div>\${c.activitySource==='app'?'<div class="text-[10px] text-primary">app action</div>':''}</td><td>\${esc(c.parties||'')}</td>
         <td>\${esc(c.ai&&!c.ai.unavailable?c.ai.headline:(c.title||''))}</td><td>\${typePicker(c)}</td><td>\${manageCell(c)}</td>
         <td><span class="\${stColor(c.status)}">\${c.status}</span></td><td class="max-w-md">\${contextHtml(c,240)}</td>
         <td><a class="link link-primary whitespace-nowrap" href="\${c.url}" target="_blank">\${c.status==='closed'?'view CRM ↗':'reply in CRM ↗'}</a></td></tr>\`).join('')}
@@ -1410,11 +1648,31 @@ async function reopenTicket(id){
 
 /* ---------- run scripts ---------- */
 async function run(name,quiet){
-  const log=document.getElementById('log'); document.getElementById('logpanel').classList.remove('hidden'); log.textContent+='\\n$ '+name+' …\\n';
-  const r=await (await fetch('/api/run/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({by:auditActor()})})).json();
-  log.textContent+=(r.output||r.error||'').trim()+'\\n'; log.scrollTop=log.scrollHeight;
-  if(r.authFailed){ await load(); alert((r.error||'CRM authentication could not be renewed.')+'\\n\\nUse the Token button to paste your CRM refresh token.'); return; }
-  if(!quiet) await load();
+  const log=document.getElementById('log'), button=name==='summarize'?document.getElementById('summarizeTool'):null, hint=name==='summarize'?document.getElementById('summarizeHint'):null;
+  document.getElementById('logpanel').classList.remove('hidden'); log.textContent+='\\n$ '+name+' …\\n';
+  if(button){button.disabled=true;button.classList.add('opacity-40');hint.textContent='Summarising… this can take several minutes. Keep this page open.';}
+  try{
+    const response=await fetch('/api/run/'+name,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({by:auditActor()})});
+    const r=await response.json();
+    log.textContent+=(r.output||r.error||'').trim()+'\\n'; log.scrollTop=log.scrollHeight;
+    if(r.rateLimited){ await load(); alert(r.error||'AI summarisation is temporarily rate limited.'); return; }
+    if(r.authFailed){ await load(); alert((r.error||'CRM authentication could not be renewed.')+'\\n\\nUse the Token button to paste your CRM refresh token.'); return; }
+    if(!r.ok){
+      if(name==='summarize') alert('AI summarisation could not run on this host. Staff do not need to log in here. Ask the host administrator to check the Activity log and run codex login status on the host PC.');
+      else alert('This action failed. Open the Activity log for details.');
+      return;
+    }
+    if(!quiet) await load();
+    if(name==='summarize'){
+      const partial=/summaries unavailable|summarization failed/i.test(r.output||'');
+      alert(partial?'Summarisation finished, but some tickets could not be summarised. Open the Activity log for details.':'AI summaries are up to date.');
+    }
+  }catch(error){
+    log.textContent+='Unable to contact the local dashboard: '+(error?.message||error)+'\\n'; log.scrollTop=log.scrollHeight;
+    alert(name==='summarize'?'AI summarisation did not start because this browser could not reach the local dashboard. Ask the host administrator to check that the dashboard is running.':'This action did not start because the local dashboard could not be reached.');
+  }finally{
+    if(button){await load();}
+  }
 }
 async function exportExcel(){
   const log=document.getElementById('log'); document.getElementById('logpanel').classList.remove('hidden'); log.textContent+='\\n$ Export to Excel …\\n';
@@ -1427,4 +1685,5 @@ async function exportExcel(){
 function hideLog(){ document.getElementById('logpanel').classList.add('hidden'); }
 load();
 setInterval(()=>refreshTokenStatus(),5*60*1000);
+setInterval(()=>load().catch(()=>{}),30*1000);
 </script></body></html>`;
