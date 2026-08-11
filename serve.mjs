@@ -799,7 +799,7 @@ function decisionPicker(c){
 }
 function outstandingDecisionPicker(c){
   const staged=pendingOutstanding[c.id]||'';
-  const button=(value,label,cls)=>{const active=staged===value;return \`<button type="button" class="btn btn-xs join-item \${active?cls:'btn-outline'}" onclick="event.stopPropagation();stageOutstanding('\${c.id}','\${value}')" title="\${active?'Click to deselect':'Set to '+label}">\${label}</button>\`;};
+  const button=(value,label,cls)=>{const active=staged===value;return \`<button type="button" data-decision="\${value}" data-selected-class="\${cls}" class="btn btn-xs join-item \${active?cls:'btn-outline'}" onclick="event.stopPropagation();stageOutstanding('\${c.id}','\${value}',this)" title="\${active?'Click to deselect':'Set to '+label}">\${label}</button>\`;};
   return \`<div class="join whitespace-nowrap" aria-label="Triage ticket">\${button('close','Close','btn-error')}\${button('keep','Keep','btn-success')}</div>\`;
 }
 async function setTicketType(id,type){
@@ -957,9 +957,16 @@ async function persistDecision(id,decision){
   saveReview();return true;
 }
 const pendingOutstanding={};
-function stageOutstanding(id,d){
+function stageOutstanding(id,d,button){
   if(pendingOutstanding[id]===d){delete pendingOutstanding[id];}else{pendingOutstanding[id]=d;}
-  outstandingRows();
+  const picker=button.closest('[aria-label="Triage ticket"]');
+  picker.closest('tr').classList.toggle('bg-base-200/60',Boolean(pendingOutstanding[id]));
+  picker.querySelectorAll('button').forEach(item=>{
+    const active=pendingOutstanding[id]===item.dataset.decision;
+    item.classList.toggle('btn-outline',!active);
+    item.classList.toggle(item.dataset.selectedClass,active);
+    item.title=active?'Click to deselect':'Set to '+item.textContent.trim();
+  });
 }
 async function confirmOutstanding(){
   const entries=Object.entries(pendingOutstanding);if(!entries.length)return;
@@ -967,7 +974,7 @@ async function confirmOutstanding(){
   entries.forEach(([id],i)=>{if(ok[i])delete pendingOutstanding[id];});
   outstandingRows();footerBar();
 }
-function clearOutstanding(){Object.keys(pendingOutstanding).forEach(k=>delete pendingOutstanding[k]);outstandingRows();}
+function clearOutstanding(){Object.keys(pendingOutstanding).forEach(k=>delete pendingOutstanding[k]);document.querySelectorAll('#otbl [aria-label="Triage ticket"] button').forEach(item=>{item.closest('tr').classList.remove('bg-base-200/60');item.classList.remove(item.dataset.selectedClass);item.classList.add('btn-outline');item.title='Set to '+item.textContent.trim();});}
 async function setDecide(id,d){
   if(REVIEW.decisions[id]===d)return;
   if(!await persistDecision(id,d))return;
@@ -995,32 +1002,23 @@ function outstandingRows(){
     if(window._oq){ const hay=((c.code||'')+' '+c.title+' '+c.parties+' '+(c.ai?.summary||'')).toLowerCase(); if(!hay.includes(window._oq)) return false; }
     return true;
   }).sort((a,b)=>new Date(a.last||0)-new Date(b.last||0));
-  const pendingCount=Object.keys(pendingOutstanding).length;
-  const pendingClose=Object.values(pendingOutstanding).filter(v=>v==='close').length;
-  const pendingKeep=Object.values(pendingOutstanding).filter(v=>v==='keep').length;
   document.getElementById('ocount').innerHTML=\`<b>\${list.length}</b> outstanding — no management decision yet\`;
-  const confirmBar=pendingCount?\`<div class="flex items-center gap-3 mb-3 p-3 bg-base-200 rounded-lg border border-base-300">
-    <span class="text-sm font-semibold">\${pendingCount} staged:</span>
-    \${pendingClose?'<span class="badge badge-error badge-sm">'+pendingClose+' close</span>':''}
-    \${pendingKeep?'<span class="badge badge-success badge-sm">'+pendingKeep+' keep</span>':''}
-    <div class="ml-auto flex gap-2">
-      <button class="btn btn-sm btn-ghost" onclick="clearOutstanding()">Clear</button>
-      <button class="btn btn-sm btn-primary" onclick="confirmOutstanding()">Confirm all</button>
-    </div></div>\`:'';
-  document.getElementById('otbl').innerHTML=confirmBar+\`<div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
+  document.getElementById('otbl').innerHTML=\`<div id="outstandingStageBar" class="sticky top-24 z-10 h-[58px] mb-3"></div><div class="overflow-x-auto bg-base-100 rounded-box shadow-sm"><table class="table table-sm table-pin-rows">
     <thead><tr><th>Ticket</th><th>Last activity</th><th>From</th><th>Type</th><th>Context</th><th>Decide</th><th></th></tr></thead><tbody>
     \${list.map(c=>outstandingRow(c)).join('')
       || '<tr><td colspan="7" class="opacity-60 p-4">Nothing outstanding — every open ticket has a management decision. 🎉</td></tr>'}
     </tbody></table></div>\`;
+  outstandingStageBar();
+}
+function outstandingStageBar(){
+  const bar=document.getElementById('outstandingStageBar');if(!bar)return;
+  bar.innerHTML=\`<div class="h-full flex items-center gap-3 p-3 bg-base-200 rounded-lg border border-base-300">
+    <span class="text-sm font-semibold">Choose Close or Keep, then confirm.</span>
+    <div class="ml-auto flex gap-2"><button class="btn btn-sm btn-ghost" onclick="clearOutstanding()">Clear</button><button class="btn btn-sm btn-primary" onclick="confirmOutstanding()">Confirm all</button></div></div>\`;
 }
 function outstandingRow(c){
-  const staged=pendingOutstanding[c.id];
-  const badgeCls=staged==='close'?'badge-error':'badge-success';
-  const cells=staged
-    ?'<td colspan="5" class="whitespace-nowrap"><span class="badge '+badgeCls+' badge-sm mr-2">'+staged+'</span> '+esc(c.code||'')+' · '+esc(c.parties||'')+'</td>'
-    :'<td class="font-semibold whitespace-nowrap">'+esc(c.code||'—')+'</td><td class="opacity-60 whitespace-nowrap">'+day(c.last)+'</td><td>'+esc(c.parties||'')+'</td><td>'+typePicker(c)+'</td><td class="max-w-md">'+contextHtml(c,150)+'</td>';
-  return '<tr class="hover'+(staged?' opacity-50':'')+'">'
-    +cells
+  return '<tr class="hover'+(pendingOutstanding[c.id]?' bg-base-200/60':'')+'">'
+    +'<td class="font-semibold whitespace-nowrap">'+esc(c.code||'—')+'</td><td class="opacity-60 whitespace-nowrap">'+day(c.last)+'</td><td>'+esc(c.parties||'')+'</td><td>'+typePicker(c)+'</td><td class="max-w-md">'+contextHtml(c,150)+'</td>'
     +'<td>'+outstandingDecisionPicker(c)+'</td>'
     +'<td><a class="link link-primary whitespace-nowrap" href="'+c.url+'" target="_blank">reply in CRM ↗</a></td></tr>';
 }
