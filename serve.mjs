@@ -987,7 +987,9 @@ let DATA={chats:[]}, TAB='dashboard', RELEASE_FOLLOWUPS=null, EDIT_RELEASE=null;
 const dashboardFetch=window.fetch.bind(window);
 window.fetch=async function(input,init={}){
   const method=(init.method||'GET').toUpperCase(),url=typeof input==='string'?input:input?.url||'';
-  const tracked=method==='POST'&&url.startsWith('/api/')&&!url.startsWith('/api/run/')&&url!=='/api/ticket-triage';
+  // Connection checks run on a timer. Keep successful checks silent; their
+  // failure is reported by refreshTokenStatus with useful recovery detail.
+  const tracked=method==='POST'&&url.startsWith('/api/')&&!url.startsWith('/api/run/')&&url!=='/api/ticket-triage'&&url!=='/api/token/check';
   const label=url.split('?')[0].split('/').filter(Boolean).slice(-1)[0]||'action';
   const log=document.getElementById('log');
   if(tracked&&log){document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ '+label+' …\\nProgress: working…\\n';log.scrollTop=log.scrollHeight;}
@@ -1193,9 +1195,10 @@ async function refreshTokenStatus(force=false){
   if(TOKEN_CHECK_IN_FLIGHT||!DATA.hasToken)return;
   if(!force&&DATA.crmState==='verified'&&DATA.crmVerifiedAt&&(Date.now()-new Date(DATA.crmVerifiedAt).getTime()<5*60*1000))return;
   TOKEN_CHECK_IN_FLIGHT=true;TOKEN_CHECK_DEADLINE=Date.now()+4000;paintTokenStatus(true);clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=setInterval(()=>paintTokenStatus(true),250);
-  const hardTimeout=setTimeout(()=>{if(!TOKEN_CHECK_IN_FLIGHT)return;TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;DATA.crmState='unknown';DATA.crmReason='Token check timed out.';paintTokenStatus();},5000);
-  try{const state=await (await fetch('/api/token/check',{method:'POST',signal:AbortSignal.timeout(4000)})).json();DATA.crmAvailable=state.available;DATA.crmState=state.state;DATA.crmVerifiedAt=state.verifiedAt;DATA.crmReason=state.reason;paintTokenStatus();updateSyncState();}
-  catch{DATA.crmState='unknown';DATA.crmReason='The CRM token check timed out. You can retry by reloading or clicking Token.';paintTokenStatus();}
+  let connectionFailureReported=false;const reportConnectionFailure=(reason)=>{if(connectionFailureReported)return;connectionFailureReported=true;const log=document.getElementById('log');if(!log)return;document.getElementById('logpanel').classList.remove('hidden');log.textContent+='\\n$ CRM connection check failed\\n'+reason+'\\n';log.scrollTop=log.scrollHeight;};
+  const hardTimeout=setTimeout(()=>{if(!TOKEN_CHECK_IN_FLIGHT)return;TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;DATA.crmState='unknown';DATA.crmReason='Token check timed out.';paintTokenStatus();reportConnectionFailure(DATA.crmReason);},5000);
+  try{const state=await (await fetch('/api/token/check',{method:'POST',signal:AbortSignal.timeout(4000)})).json();DATA.crmAvailable=state.available;DATA.crmState=state.state;DATA.crmVerifiedAt=state.verifiedAt;DATA.crmReason=state.reason;paintTokenStatus();updateSyncState();if(!state.available)reportConnectionFailure(state.reason||'The CRM connection is unavailable.');}
+  catch{DATA.crmState='unknown';DATA.crmReason='The CRM token check timed out. You can retry by reloading or clicking Token.';paintTokenStatus();reportConnectionFailure(DATA.crmReason);}
   finally{clearTimeout(hardTimeout);TOKEN_CHECK_IN_FLIGHT=false;TOKEN_CHECK_DEADLINE=0;clearInterval(TOKEN_CHECK_TIMER);TOKEN_CHECK_TIMER=null;paintTokenStatus();}
 }
 function updateSyncState(){
@@ -1657,8 +1660,8 @@ function renderInbox(){
   const leftOnRead=window._inboxLeftOnRead==='yes';
   v.innerHTML=\`<div class="flex gap-2 mb-3 flex-wrap items-center">
     <input id="q" class="input input-bordered input-sm" placeholder="search tickets and conversations…" oninput="queueInboxSearch()" value="\${esc(window._q||'')}">
-    <details class="dropdown"><summary class="btn btn-sm">Filters <span class="opacity-60">▾</span></summary><div class="dropdown-content z-30 mt-2 w-64 rounded-box border border-base-300 bg-base-100 p-3 shadow-xl" onclick="event.stopPropagation()"><div class="text-xs font-semibold uppercase opacity-55 mb-2">Ticket type</div><div class="grid gap-2">\${types.map(type=>\`<label class="flex items-center gap-2 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div><div class="divider my-3"></div><label class="form-control"><span class="label-text text-xs font-semibold uppercase opacity-55 mb-1">Ticket status</span><select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select></label><label class="flex items-center gap-2 cursor-pointer text-sm mt-4"><input id="flr" type="checkbox" class="checkbox checkbox-sm checkbox-primary" \${leftOnRead?'checked':''} onchange="inboxRows()"> Left on read</label></div></details>
-    <span class="text-sm opacity-60" id="rowcount"></span></div><div id="tbl"><div class="flex items-center justify-center gap-3 p-12 opacity-65"><span class="loading loading-spinner loading-md"></span><span>Loading tickets…</span></div></div>\`;
+    <details class="dropdown"><summary id="inboxFiltersButton" class="btn btn-sm" title="Change ticket filters">Filters <span class="opacity-60">▾</span></summary><div class="dropdown-content z-30 mt-2 w-64 rounded-box border border-base-300 bg-base-100 p-3 shadow-xl" onclick="event.stopPropagation()"><div class="text-xs font-semibold uppercase opacity-55 mb-2">Ticket type</div><div class="grid gap-2">\${types.map(type=>\`<label class="flex items-center gap-2 cursor-pointer text-sm"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary ift" value="\${type}" \${selected.includes(type)?'checked':''} onchange="inboxRows()"> \${type}</label>\`).join('')}</div><div class="divider my-3"></div><label class="form-control"><span class="label-text text-xs font-semibold uppercase opacity-55 mb-1">Ticket status</span><select id="fs" class="select select-bordered select-sm" onchange="inboxRows()">\${['open','all','closed'].map(o=>\`<option \${window._fs===o?'selected':''}>\${o}</option>\`).join('')}</select></label><label class="flex items-center gap-2 cursor-pointer text-sm mt-4"><input id="flr" type="checkbox" class="checkbox checkbox-sm checkbox-primary" \${leftOnRead?'checked':''} onchange="inboxRows()"> Left on read</label></div></details><div id="inboxActiveFilters" class="flex items-center gap-2 text-xs opacity-60 whitespace-nowrap">\${inboxFilterSummaryHtml(selected,window._fs||'open',leftOnRead)}</div>
+    <span class="text-sm opacity-60 ml-auto whitespace-nowrap" id="rowcount"></span></div><div id="tbl"><div class="flex items-center justify-center gap-3 p-12 opacity-65"><span class="loading loading-spinner loading-md"></span><span>Loading tickets…</span></div></div>\`;
   inboxRows();
 }
 function setInboxSort(key){
@@ -1672,9 +1675,12 @@ function inboxSortHeader(key,label){
 }
 function setInboxPage(page){window._inboxPage=Math.max(1,Number(page)||1);window.scrollTo(0,0);inboxRows(true);}
 function queueInboxSearch(){clearTimeout(window._inboxSearchTimer);window._inboxSearchTimer=setTimeout(()=>inboxRows(),180);}
+function inboxFilterSummaryHtml(types,status,leftOnRead){const groups=[];if(types.length)groups.push('<span>'+types.map(esc).join(' · ')+'</span>');groups.push('<span>'+esc(status)+'</span>');if(leftOnRead)groups.push('<span>left on read</span>');return groups.join('<span class="opacity-35">│</span>');}
+function paintInboxFilterIndicator(){const summary=document.getElementById('inboxActiveFilters');if(!summary)return;summary.innerHTML=inboxFilterSummaryHtml(window._fts,window._fs,window._inboxLeftOnRead==='yes');}
 async function inboxRows(keepPage=false){
   window._q=document.getElementById('q').value.toLowerCase();
   window._fts=[...document.querySelectorAll('.ift:checked')].map(el=>el.value); window._fs=document.getElementById('fs').value;window._inboxLeftOnRead=document.getElementById('flr').checked?'yes':'all';
+  paintInboxFilterIndicator();
   if(!keepPage)window._inboxPage=1;
   const params=new URLSearchParams({q:window._q,status:window._fs,types:window._fts.join(','),leftOnRead:window._inboxLeftOnRead,page:window._inboxPage,pageSize:INBOX_PAGE_SIZE,sort:window._inboxSort||'',direction:window._inboxSortDirection||''});
   const requestId=(window._inboxRequestId||0)+1;window._inboxRequestId=requestId;
